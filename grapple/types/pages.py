@@ -179,10 +179,8 @@ def get_specific_page(
         ctype = None
         if site:
             qs = qs.in_site(site)
-        print('LOCALE', locale)
 
         if locale:
-            print('LOCALE FILTERED')
             qs = qs.filter(locale=locale)
 
         if content_type:
@@ -259,6 +257,12 @@ def PagesQuery():
                     "Use `inSite: true` from the relevant site domain."
                 ),
             ),
+            locale=graphene.Argument(
+                graphene.String,
+                description=_(
+                    "Filter by locale."
+                ),
+            ),
             token=graphene.Argument(
                 graphene.String,
                 description=_(
@@ -304,18 +308,17 @@ def PagesQuery():
 
         # Return a specific page, identified by ID or Slug.
         def resolve_page(self, info, **kwargs):
-            locale = info.context.LANGUAGE_CODE
 
             return get_specific_page(
                 id=kwargs.get("id"),
                 slug=kwargs.get("slug"),
                 url_path=kwargs.get("url_path"),
+                locale=kwargs.get("locale"),
                 token=kwargs.get("token"),
                 content_type=kwargs.get("content_type"),
                 site=Site.find_for_request(info.context)
                 if kwargs.get("in_site", False)
                 else None,
-                locale=locale
             )
 
     return Mixin
