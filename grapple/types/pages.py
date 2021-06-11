@@ -31,6 +31,8 @@ class PageInterface(graphene.Interface):
     url = graphene.String()
     url_path = graphene.String(required=True)
 
+    locale = graphene.String()
+
     depth = graphene.Int()
     seo_title = graphene.String(required=True)
     search_description = graphene.String()
