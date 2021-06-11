@@ -167,7 +167,7 @@ class Page(DjangoObjectType):
 
 
 def get_specific_page(
-    id=None, slug=None, url_path=None, token=None, content_type=None, site=None
+    id=None, slug=None, url_path=None, token=None, content_type=None, site=None, locale=None
 ):
     """
     Get a specific page, given a page_id, slug or preview if a preview token is passed
@@ -179,6 +179,11 @@ def get_specific_page(
         ctype = None
         if site:
             qs = qs.in_site(site)
+        print('LOCALE', locale)
+
+        if locale:
+            print('LOCALE FILTERED')
+            qs = qs.filter(locale=locale)
 
         if content_type:
             app_label, model = content_type.lower().split(".")
@@ -299,6 +304,8 @@ def PagesQuery():
 
         # Return a specific page, identified by ID or Slug.
         def resolve_page(self, info, **kwargs):
+            locale = info.context.LANGUAGE_CODE
+
             return get_specific_page(
                 id=kwargs.get("id"),
                 slug=kwargs.get("slug"),
@@ -308,6 +315,7 @@ def PagesQuery():
                 site=Site.find_for_request(info.context)
                 if kwargs.get("in_site", False)
                 else None,
+                locale=locale
             )
 
     return Mixin
