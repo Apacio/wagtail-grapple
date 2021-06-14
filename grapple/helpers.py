@@ -65,6 +65,9 @@ def register_query_field(
                 field_query_params["token"] = graphene.Argument(
                     graphene.String, description=ugettext_lazy("The preview token.")
                 )
+                field_query_params["locale"] = graphene.Argument(
+                    graphene.String, description=ugettext_lazy("The current locale.")
+                )
 
         def Mixin():
             # Generic methods to get all and query one model instance.

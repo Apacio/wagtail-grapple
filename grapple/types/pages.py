@@ -31,8 +31,6 @@ class PageInterface(graphene.Interface):
     url = graphene.String()
     url_path = graphene.String(required=True)
 
-    locale = graphene.String()
-
     depth = graphene.Int()
     seo_title = graphene.String(required=True)
     search_description = graphene.String()
@@ -259,12 +257,7 @@ def PagesQuery():
                     "Use `inSite: true` from the relevant site domain."
                 ),
             ),
-            locale=graphene.Argument(
-                graphene.String,
-                description=_(
-                    "Filter by locale."
-                ),
-            ),
+            locale=graphene.String(),
             token=graphene.Argument(
                 graphene.String,
                 description=_(
