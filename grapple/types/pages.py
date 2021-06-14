@@ -243,6 +243,7 @@ def PagesQuery():
                 description=_("Filter to pages in the current site only."),
                 default_value=False,
             ),
+            locale=graphene.String(),
             enable_search=True,
             required=True,
         )
@@ -298,6 +299,11 @@ def PagesQuery():
                     )  # something not quite right here, bail out early
                 else:
                     pages = pages.filter(content_type=ctype)
+
+            locale = kwargs.pop("locale", None)
+
+            if locale:
+                pages = pages.filter(locale__language_code=locale)
 
             return resolve_queryset(pages, info, **kwargs)
 
