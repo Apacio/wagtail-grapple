@@ -249,15 +249,15 @@ def PagesQuery():
         page = graphene.Field(
             PageInterface,
             id=graphene.Int(),
-            slug=graphene.String(),
-            url_path=graphene.Argument(
-                graphene.String,
-                description=_(
-                    "Filter by url path. Note: in a multi-site setup, returns the first available page based. "
-                    "Use `inSite: true` from the relevant site domain."
-                ),
-            ),
-            locale=graphene.String(),
+            # slug=graphene.String(),
+            # url_path=graphene.Argument(
+            #     graphene.String,
+            #     description=_(
+            #         "Filter by url path. Note: in a multi-site setup, returns the first available page based. "
+            #         "Use `inSite: true` from the relevant site domain."
+            #     ),
+            # ),
+            # locale=graphene.String(),
             token=graphene.Argument(
                 graphene.String,
                 description=_(
