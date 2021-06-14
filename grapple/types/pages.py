@@ -181,7 +181,7 @@ def get_specific_page(
             qs = qs.in_site(site)
 
         if locale:
-            qs = qs.filter(locale=locale)
+            qs = qs.filter(locale__language_code=locale)
 
         if content_type:
             app_label, model = content_type.lower().split(".")
