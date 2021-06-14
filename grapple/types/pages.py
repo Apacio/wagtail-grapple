@@ -167,7 +167,7 @@ class Page(DjangoObjectType):
 
 
 def get_specific_page(
-    id=None, slug=None, url_path=None, token=None, content_type=None, site=None, locale=None
+    id=None, slug=None, url_path=None, token=None, content_type=None, site=None, language_code=None
 ):
     """
     Get a specific page, given a page_id, slug or preview if a preview token is passed
@@ -180,8 +180,8 @@ def get_specific_page(
         if site:
             qs = qs.in_site(site)
 
-        if locale:
-            qs = qs.filter(locale__language_code=locale)
+        if language_code:
+            qs = qs.filter(locale__language_code=language_code)
 
         if content_type:
             app_label, model = content_type.lower().split(".")
@@ -243,7 +243,7 @@ def PagesQuery():
                 description=_("Filter to pages in the current site only."),
                 default_value=False,
             ),
-            locale=graphene.String(),
+            language_code=graphene.String(),
             enable_search=True,
             required=True,
         )
@@ -258,7 +258,7 @@ def PagesQuery():
                     "Use `inSite: true` from the relevant site domain."
                 ),
             ),
-            locale=graphene.String(),
+            language_code=graphene.String(),
             token=graphene.Argument(
                 graphene.String,
                 description=_(
@@ -300,10 +300,10 @@ def PagesQuery():
                 else:
                     pages = pages.filter(content_type=ctype)
 
-            locale = kwargs.pop("locale", None)
+            language_code = kwargs.pop("language_code", None)
 
-            if locale:
-                pages = pages.filter(locale__language_code=locale)
+            if language_code:
+                pages = pages.filter(locale__language_code=language_code)
 
             return resolve_queryset(pages, info, **kwargs)
 
@@ -314,7 +314,7 @@ def PagesQuery():
                 id=kwargs.get("id"),
                 slug=kwargs.get("slug"),
                 url_path=kwargs.get("url_path"),
-                locale=kwargs.get("locale"),
+                language_code=kwargs.get("language_code"),
                 token=kwargs.get("token"),
                 content_type=kwargs.get("content_type"),
                 site=Site.find_for_request(info.context)

@@ -65,8 +65,8 @@ def register_query_field(
                 field_query_params["token"] = graphene.Argument(
                     graphene.String, description=ugettext_lazy("The preview token.")
                 )
-                field_query_params["locale"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The current locale.")
+                field_query_params["language_code"] = graphene.Argument(
+                    graphene.String, description=ugettext_lazy("The current language code.")
                 )
 
         def Mixin():
