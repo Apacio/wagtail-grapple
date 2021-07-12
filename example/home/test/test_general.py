@@ -1,6 +1,8 @@
+from django.test import override_settings
 from example.tests.test_grapple import BaseGrappleTest
 
 from home.factories import BlogPageFactory, SimpleModelFactory
+import uuid
 
 
 class TestRegisterSingularQueryField(BaseGrappleTest):
@@ -128,7 +130,7 @@ class TestRegisterPaginatedQueryField(BaseGrappleTest):
                     id
                 }
                 pagination {
-                  totalPages
+                    totalPages
                 }
             }
         }
@@ -138,6 +140,50 @@ class TestRegisterPaginatedQueryField(BaseGrappleTest):
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(int(data["items"][0]["id"]), self.child_post.id)
         self.assertEqual(int(data["pagination"]["totalPages"]), 3)
+
+    @override_settings(GRAPPLE={"PAGE_SIZE": 2})
+    def test_query_field_plural_default_per_page(self):
+        query = """
+        {
+            blogPages {
+                items {
+                    id
+                }
+                pagination {
+                    perPage
+                    totalPages
+                }
+            }
+        }
+        """
+        results = self.client.execute(query)
+        data = results["data"]["blogPages"]
+        self.assertEqual(len(data["items"]), 2)
+        self.assertEqual(int(data["items"][0]["id"]), self.child_post.id)
+        self.assertEqual(int(data["pagination"]["perPage"]), 2)
+        self.assertEqual(int(data["pagination"]["totalPages"]), 2)
+
+    @override_settings(GRAPPLE={"MAX_PAGE_SIZE": 3})
+    def test_query_field_plural_default_max_per_page(self):
+        query = """
+        {
+            blogPages(perPage: 5) {
+                items {
+                    id
+                }
+                pagination {
+                    perPage
+                    totalPages
+                }
+            }
+        }
+        """
+        results = self.client.execute(query)
+        data = results["data"]["blogPages"]
+        self.assertEqual(len(data["items"]), 3)
+        self.assertEqual(int(data["items"][0]["id"]), self.child_post.id)
+        self.assertEqual(int(data["pagination"]["perPage"]), 3)
+        self.assertEqual(int(data["pagination"]["totalPages"]), 1)
 
     def test_query_field(self):
         def query(filters):
@@ -174,3 +220,49 @@ class TestRegisterPaginatedQueryField(BaseGrappleTest):
         results = self.client.execute(query('slug: "post-two"'))
         data = results["data"]["blogPage"]
         self.assertEqual(int(data["id"]), self.another_post.id)
+
+
+class TestRegisterMutation(BaseGrappleTest):
+    def setUp(self):
+        super().setUp()
+        self.blog_post = BlogPageFactory(parent=self.home, slug="post-one")
+        self.name = "Jean-Claude"
+        # A randomly generated slug is set here in order to avoid conflicted slug during tests
+        self.slug = str(uuid.uuid4().hex[:6].upper())
+
+    def test_mutation(self):
+        query = """
+        mutation {
+          createAuthor(name: "%s", parent: %s, slug: "%s") {
+            author {
+              id
+              ...on AuthorPage {
+                  name
+              }
+              title
+              slug
+            }
+          }
+        }
+        """ % (
+            self.name,
+            self.blog_post.id,
+            self.slug,
+        )
+
+        results = self.client.execute(query)
+        data = results["data"]["createAuthor"]
+        self.assertIn("author", data)
+
+        # First we check that standard page fields are available in the returned query
+        self.assertIn("id", data["author"])
+        self.assertIn("title", data["author"])
+        self.assertIn("slug", data["author"])
+
+        # Now we ensure that AuthorPage-specific fields are well returned
+        self.assertIn("name", data["author"])
+
+        # Finally, we ensure that data passed in the first place to the query are indeed
+        # returned after the author has been saved to the database.
+        self.assertEqual(data["author"]["name"], self.name)
+        self.assertEqual(data["author"]["slug"], self.slug)

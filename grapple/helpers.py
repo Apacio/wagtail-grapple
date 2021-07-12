@@ -82,7 +82,7 @@ def register_query_field(
                         if "token" in kwargs and hasattr(
                             cls, "get_page_from_preview_token"
                         ):
-                            return cls.get_page_from_preview_token(kwargs["token"])
+                            return cls.get_page_from_preview_token(kwargs.get("token"))
 
                         qs = cls.objects.live().public()
                         url_path = kwargs.pop("url_path", None)
@@ -102,7 +102,9 @@ def register_query_field(
             def resolve_plural(self, _, info, **kwargs):
                 qs = cls.objects
                 if issubclass(cls, Page):
-                    qs = qs.live().public().order_by("-first_published_at")
+                    qs = qs.live().public()
+                    if "order" not in kwargs:
+                        kwargs["order"] = "-first_published_at"
 
                 return resolve_queryset(qs.all(), info, **kwargs)
 
@@ -190,7 +192,7 @@ def register_paginated_query_field(
                         if "token" in kwargs and hasattr(
                             cls, "get_page_from_preview_token"
                         ):
-                            return cls.get_page_from_preview_token(kwargs["token"])
+                            return cls.get_page_from_preview_token(kwargs.get("token"))
 
                         qs = cls.objects.live().public()
                         url_path = kwargs.pop("url_path", None)
@@ -209,7 +211,9 @@ def register_paginated_query_field(
             def resolve_plural(self, _, info, **kwargs):
                 qs = cls.objects
                 if issubclass(cls, Page):
-                    qs = qs.live().public().order_by("-first_published_at")
+                    qs = qs.live().public()
+                    if "order" not in kwargs:
+                        kwargs["order"] = "-first_published_at"
 
                 return resolve_paginated_queryset(qs.all(), info, **kwargs)
 
@@ -278,14 +282,16 @@ def register_singular_query_field(field_name, query_params=None, required=False)
                 try:
                     qs = cls.objects
                     if "order" in kwargs:
-                        qs = qs.order_by(kwargs.pop("order"))
+                        qs = qs.order_by(
+                            *map(lambda x: x.strip(), kwargs.pop("order").split(","))
+                        )
 
                     # If is a Page then only query live/public pages.
                     if issubclass(cls, Page):
                         if "token" in kwargs and hasattr(
                             cls, "get_page_from_preview_token"
                         ):
-                            return cls.get_page_from_preview_token(kwargs["token"])
+                            return cls.get_page_from_preview_token(kwargs.get("token"))
 
                         return qs.live().public().filter(**kwargs).first()
 

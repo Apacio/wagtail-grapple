@@ -142,13 +142,13 @@ the ``ImageRenditionObjectType`` provides the following fields:
 ::
 
     id: ID
-    filterSpec: String!
+    url: String
     file: String!
     width: Int
     height: Int
-    focalPointKey: String!
+    aspectRatio: Float!
+    sizes: String!
     image: ImageObjectType!
-    url: String
 
 
 DocumentObjectType

@@ -1,5 +1,6 @@
 import graphene
 from django.db import models
+from django.conf import settings
 from modelcluster.fields import ParentalKey
 from modelcluster.contrib.taggit import ClusterTaggableManager
 
@@ -38,6 +39,10 @@ from grapple.models import (
 )
 
 from home.blocks import StreamFieldBlock
+
+document_model_string = getattr(
+    settings, "WAGTAILDOCS_DOCUMENT_MODEL", "wagtaildocs.Document"
+)
 
 
 @register_singular_query_field("simpleModel")
@@ -83,7 +88,7 @@ class BlogPage(HeadlessPreviewMixin, Page):
         related_name="+",
     )
     book_file = models.ForeignKey(
-        "wagtaildocs.Document",
+        document_model_string,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
