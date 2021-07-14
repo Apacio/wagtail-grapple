@@ -27,7 +27,7 @@ class SiteObjectType(DjangoObjectType):
         slug=graphene.String(),
         token=graphene.String(),
         content_type=graphene.String(),
-        url_path=graphene.String()
+        url_path=graphene.String(),
     )
 
     def resolve_pages(self, info, **kwargs):

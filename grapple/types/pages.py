@@ -167,7 +167,13 @@ class Page(DjangoObjectType):
 
 
 def get_specific_page(
-    id=None, slug=None, url_path=None, token=None, content_type=None, site=None, language_code=None
+    id=None,
+    slug=None,
+    url_path=None,
+    token=None,
+    content_type=None,
+    site=None,
+    language_code=None,
 ):
     """
     Get a specific page, given a page_id, slug or preview if a preview token is passed
