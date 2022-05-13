@@ -1,5 +1,6 @@
-from example.tests.test_grapple import BaseGrappleTest
 from home.factories import AdvertFactory
+
+from example.tests.test_grapple import BaseGrappleTest
 
 
 class AdvertTest(BaseGrappleTest):
@@ -32,17 +33,15 @@ class AdvertTest(BaseGrappleTest):
 
     def test_advert_single_query(self):
         query = """
-        {
-           advert(url:"%s") {
+        query($url: String) {
+           advert(url: $url) {
                 id
                 url
                 text
             }
         }
-        """ % (
-            self.advert.url
-        )
-        executed = self.client.execute(query)
+        """
+        executed = self.client.execute(query, variables={"url": self.advert.url})
         advert = executed["data"]["advert"]
 
         # Check all the fields

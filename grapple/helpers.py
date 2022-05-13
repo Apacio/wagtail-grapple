@@ -1,15 +1,17 @@
-import graphene
 import inspect
 from types import MethodType
 
-from django.utils.translation import ugettext_lazy
+import graphene
+from django.utils.translation import gettext_lazy as _
+from graphene.utils.str_converters import to_camel_case
 from wagtail.core.models import Page
 
 from .registry import registry
+from .settings import grapple_settings
 from .types.streamfield import StreamFieldInterface
 
-
 streamfield_types = []
+field_middlewares = {}
 
 
 def register_streamfield_block(cls):
@@ -35,6 +37,19 @@ def register_graphql_schema(schema_cls):
     return schema_cls
 
 
+def register_field_middleware(field_name: str, middleware):
+    assert isinstance(middleware, list), "middleware should be list but got {}.".format(
+        type(middleware)
+    )
+    if grapple_settings.AUTO_CAMELCASE:
+        field_name = to_camel_case(field_name)
+
+    if field_name in field_middlewares:
+        field_middlewares[field_name] += middleware
+    else:
+        field_middlewares[field_name] = middleware
+
+
 def register_query_field(
     field_name,
     plural_field_name=None,
@@ -42,6 +57,7 @@ def register_query_field(
     required=False,
     plural_required=False,
     plural_item_required=False,
+    middleware=None,
 ):
     from .types.structures import QuerySetList
     from .utils import resolve_queryset
@@ -50,20 +66,20 @@ def register_query_field(
         plural_field_name = field_name + "s"
 
     def inner(cls):
-        field_type = lambda: registry.models[cls]
+        field_type = lambda: registry.models[cls]  # noqa: E731
         field_query_params = query_params
         if field_query_params is None:
             field_query_params = {"id": graphene.Int()}
 
             if issubclass(cls, Page):
                 field_query_params["slug"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The page slug.")
+                    graphene.String, description=_("The page slug.")
                 )
                 field_query_params["url_path"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The url path.")
+                    graphene.String, description=_("The url path.")
                 )
                 field_query_params["token"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The preview token.")
+                    graphene.String, description=_("The preview token.")
                 )
                 field_query_params["language_code"] = graphene.Argument(
                     graphene.String, description=ugettext_lazy("The current language code.")
@@ -96,7 +112,7 @@ def register_query_field(
                         return qs.get(**kwargs)
 
                     return cls.objects.get(**kwargs)
-                except Exception as e:
+                except Exception:
                     return None
 
             def resolve_plural(self, _, info, **kwargs):
@@ -145,6 +161,10 @@ def register_query_field(
         register_graphql_schema(Mixin())
         return cls
 
+    if middleware is not None:
+        register_field_middleware(field_name, middleware)
+        register_field_middleware(plural_field_name, middleware)
+
     return inner
 
 
@@ -155,6 +175,7 @@ def register_paginated_query_field(
     required=False,
     plural_required=False,
     plural_item_required=False,
+    middleware=None,
 ):
     from .types.structures import PaginatedQuerySet
     from .utils import resolve_paginated_queryset
@@ -163,20 +184,20 @@ def register_paginated_query_field(
         plural_field_name = field_name + "s"
 
     def inner(cls):
-        field_type = lambda: registry.models[cls]
+        field_type = lambda: registry.models[cls]  # noqa: E731
         field_query_params = query_params
         if field_query_params is None:
             field_query_params = {"id": graphene.Int()}
 
             if issubclass(cls, Page):
                 field_query_params["slug"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The page slug.")
+                    graphene.String, description=_("The page slug.")
                 )
                 field_query_params["url_path"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The page url path.")
+                    graphene.String, description=_("The page url path.")
                 )
                 field_query_params["token"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The preview token.")
+                    graphene.String, description=_("The preview token.")
                 )
 
         def Mixin():
@@ -205,7 +226,7 @@ def register_paginated_query_field(
                         return qs.get(**kwargs)
 
                     return cls.objects.get(**kwargs)
-                except:
+                except Exception:
                     return None
 
             def resolve_plural(self, _, info, **kwargs):
@@ -254,26 +275,30 @@ def register_paginated_query_field(
         register_graphql_schema(Mixin())
         return cls
 
+    if middleware is not None:
+        register_field_middleware(field_name, middleware)
+        register_field_middleware(plural_field_name, middleware)
+
     return inner
 
 
-def register_singular_query_field(field_name, query_params=None, required=False):
+def register_singular_query_field(
+    field_name, query_params=None, required=False, middleware=None
+):
     def inner(cls):
-        field_type = lambda: registry.models[cls]
+        field_type = lambda: registry.models[cls]  # noqa: E731
         field_query_params = query_params
 
         if field_query_params is None:
             field_query_params = {
                 "order": graphene.Argument(
                     graphene.String,
-                    description=ugettext_lazy(
-                        "Use the Django QuerySet order_by format."
-                    ),
+                    description=_("Use the Django QuerySet order_by format."),
                 ),
             }
             if issubclass(cls, Page):
                 field_query_params["token"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The preview token.")
+                    graphene.String, description=_("The preview token.")
                 )
 
         def Mixin():
@@ -296,7 +321,7 @@ def register_singular_query_field(field_name, query_params=None, required=False)
                         return qs.live().public().filter(**kwargs).first()
 
                     return qs.filter(**kwargs).first()
-                except:
+                except Exception:
                     return None
 
             # Create schema and add resolve methods
@@ -320,5 +345,8 @@ def register_singular_query_field(field_name, query_params=None, required=False)
         # Send schema to Grapple schema.
         register_graphql_schema(Mixin())
         return cls
+
+    if middleware is not None:
+        register_field_middleware(field_name, middleware)
 
     return inner

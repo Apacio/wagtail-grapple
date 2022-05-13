@@ -1,6 +1,7 @@
+import inspect
+
 import graphene
 import wagtail
-import inspect
 import wagtail.documents.blocks
 import wagtail.embeds.blocks
 import wagtail.images.blocks
@@ -9,9 +10,9 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from graphene.types import Scalar
 from graphene_django.converter import convert_django_field
+from wagtail.core import blocks
 from wagtail.core.fields import StreamField
 from wagtail.core.rich_text import expand_db_html
-from wagtail.core import blocks
 from wagtail.embeds.blocks import EmbedValue
 from wagtail.embeds.embeds import get_embed
 from wagtail.embeds.exceptions import EmbedException
@@ -22,7 +23,10 @@ from ..registry import registry
 class GenericStreamFieldInterface(Scalar):
     @staticmethod
     def serialize(stream_value):
-        return stream_value.stream_data
+        try:
+            return stream_value.raw_data
+        except AttributeError:
+            return stream_value.stream_data
 
 
 @convert_django_field.register(StreamField)
@@ -108,19 +112,28 @@ class StructBlockItem:
 def serialize_struct_obj(obj):
     rtn_obj = {}
 
-    if hasattr(obj, "stream_data"):
+    if hasattr(obj, "raw_data"):
+        rtn_obj = []
+        for field in obj[0]:
+            rtn_obj.append(serialize_struct_obj(field.value))
+    # This conditionnal and below support both Wagtail >= 2.13 and <2.12 versions.
+    # The "stream_data" check can be dropped once 2.11 is not supported anymore.
+    # Cf: https://docs.wagtail.io/en/stable/releases/2.12.html#stream-data-on-streamfield-values-is-deprecated
+    elif hasattr(obj, "stream_data"):
         rtn_obj = []
         for field in obj.stream_data:
             rtn_obj.append(serialize_struct_obj(field["value"]))
     else:
         for field in obj:
             value = obj[field]
-            if hasattr(value, "stream_data"):
+            if hasattr(value, "raw_data"):
                 rtn_obj[field] = list(
-                    map(
-                        lambda data: serialize_struct_obj(data["value"]),
-                        value.stream_data,
-                    )
+                    map(lambda data: serialize_struct_obj(data.value), value[0])
+                )
+            elif hasattr(obj, "stream_data"):
+                map(
+                    lambda data: serialize_struct_obj(data["value"]),
+                    value.stream_data,
                 )
             elif hasattr(value, "value"):
                 rtn_obj[field] = value.value
@@ -143,9 +156,9 @@ class StructBlock(graphene.ObjectType):
     def resolve_blocks(self, info, **kwargs):
         stream_blocks = []
 
-        if issubclass(type(self.value), wagtail.core.blocks.stream_block.StreamValue):
+        if issubclass(type(self.value), blocks.stream_block.StreamValue):
             # self: StreamChild, block: StreamBlock, value: StreamValue
-            stream_data = self.value.stream_data
+            stream_data = self.value[0]
             child_blocks = self.value.stream_block.child_blocks
         else:
             # This occurs when StreamBlock is child of StructBlock
@@ -155,9 +168,9 @@ class StructBlock(graphene.ObjectType):
 
         for field, value in stream_data.items():
             block = dict(child_blocks)[field]
-            if issubclass(
-                type(block), wagtail.core.blocks.ChooserBlock
-            ) or not issubclass(type(block), blocks.StructBlock):
+            if issubclass(type(block), blocks.ChooserBlock) or not issubclass(
+                type(block), blocks.StructBlock
+            ):
                 if isinstance(value, int):
                     value = block.to_python(value)
 
@@ -172,23 +185,13 @@ class StreamBlock(StructBlock):
 
     def resolve_blocks(self, info, **kwargs):
         stream_blocks = []
-        for stream in self.value.stream_data:
-            if type(stream) == tuple:
-                # As of Wagtail 2.11 stream_data is a list of dicts (when lazy) or tuples
-                # when not lazy. The tuple is (block_type, value, id) where value has been run through bulk_to_python()
-                # @see https://github.com/wagtail/wagtail/pull/5976
-                block_type, value, _ = stream
-                block = self.value.stream_block.child_blocks[block_type]
-            else:
-                block_type = stream["type"]
-                value = stream["value"]
-                block = self.value.stream_block.child_blocks[block_type]
-                if issubclass(
-                    type(block), wagtail.core.blocks.ChooserBlock
-                ) or not issubclass(type(block), blocks.StructBlock):
-                    value = block.to_python(value)
 
+        for stream in self.value:
+            block_type = stream.block_type
+            value = stream.value
+            block = self.value.stream_block.child_blocks[block_type]
             stream_blocks.append(StructBlockItem(block_type, block, value))
+
         return stream_blocks
 
 
@@ -433,9 +436,9 @@ registry.streamfield_blocks.update(
 
 
 def register_streamfield_blocks():
-    from .pages import PageInterface
     from .documents import get_document_type
     from .images import get_image_type
+    from .pages import PageInterface
 
     class PageChooserBlock(graphene.ObjectType):
         page = graphene.Field(PageInterface, required=True)

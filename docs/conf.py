@@ -13,6 +13,10 @@
 import os
 import sys
 
+import sphinx_wagtail_theme
+from pygments_graphql import GraphqlLexer
+from sphinx.highlighting import lexers
+
 from grapple import __version__
 
 sys.path.insert(0, os.path.abspath("./grapple"))
@@ -21,7 +25,7 @@ sys.path.insert(0, os.path.abspath("./grapple"))
 # -- Project information -----------------------------------------------------
 
 project = "Wagtail Grapple"
-copyright = "2019, Nathan Horrigan"
+copyright = "2019, Nathan Horrigan. 2020-present Dan Braghis and contributors"
 author = "Nathan Horrigan"
 
 # The full version, including alpha/beta/rc tags
@@ -33,7 +37,7 @@ release = __version__
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = []
+extensions = ["sphinx_wagtail_theme"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -49,7 +53,12 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "sphinx_rtd_theme"
+html_theme = "sphinx_wagtail_theme"
+html_theme_path = [sphinx_wagtail_theme.get_html_theme_path()]
+html_theme_options = {
+    "project_name": "Wagtail Grapple Documentation",
+    "github_url": "https://github.com/GrappleGQL/wagtail-grapple/tree/main/docs/",
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -57,3 +66,6 @@ html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 
 master_doc = "index"
+
+
+lexers["graphql"] = GraphqlLexer()

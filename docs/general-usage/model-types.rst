@@ -10,10 +10,55 @@ using `Graphene <https://github.com/graphql-python/graphene/>`_ (Grapple's under
 and take advantage of Grapple's generic ``GraphQLField`` type.
 
 
+GraphQLField
+-------------
+.. module:: grapple.models
+.. class:: GraphQLField(field_name: str, field_type: type = None, required=None, **kwargs)
+
+    .. attribute:: field_name (str)
+
+        This is the name of the class property used in your model definition.
+
+    .. attribute:: field_type (type)
+
+        A Grapple model type such as ``GraphQLString`` or ``GraphQLBoolean``.
+
+    .. attribute:: required (bool=None)
+
+        Represents the field as non-nullable in the schema. This promises the client that it will have a value returned.
+
+    .. attribute:: kwargs
+
+        Useful keyword arguments:
+
+        * ``source`` (string)
+            You can pass a source string that is an attribute or method on the
+            class itself.
+
+            If used within a `StreamField`, the method will receive all values
+            from the instance via the `values` kwarg, e.g.:
+
+            .. code-block:: python
+
+                class SomeStructBlock(blocks.StructBlock):
+                    text = blocks.CharBlock()
+
+                    graphql_fields = [
+                        GraphQLField(
+                            field_name="some_name",
+                            field_type=graphene.String,
+                            source="some_method",
+                        )
+                    ]
+
+                    def some_method(self, values: Dict[str, Any] = None) -> Optional[str]:
+                        return values.get("text") if values else None
+
+
 GraphQLString
 -------------
 .. module:: grapple.models
-.. class:: GraphQLString(field_name, required=False)
+.. class:: GraphQLString(field_name, required=False, **kwargs)
 
     A basic field type is string. Commonly used for CharField, TextField,
     UrlField or any other Django field that returns a string as it's value.
@@ -26,10 +71,38 @@ GraphQLString
 
         Represents the field as non-nullable in the schema. This promises the client that it will have a value returned.
 
+    .. attribute:: kwargs
+
+        Useful keyword arguments:
+
+        * ``source`` (string)
+            You can pass a source string that is an attribute or method on the
+            class itself.
+
+            If used within a `StreamField`, the method will receive all values
+            from the instance via the `values` kwarg, e.g.:
+
+            .. code-block:: python
+
+                class SomeStructBlock(blocks.StructBlock):
+                    text = blocks.CharBlock()
+
+                    graphql_fields = [
+                        GraphQLString(
+                            field_name="some_name",
+                            source="some_method",
+                        )
+                    ]
+
+                    def some_method(self, values: Dict[str, Any] = None) -> Optional[str]:
+                        return values.get("text") if values else None
+
     In your models.py:
-    ::
+
+    .. code-block:: python
 
         from grapple.types import GraphQLString
+
 
         class BlogPage(Page):
             author = models.CharField(max_length=255)
@@ -40,7 +113,8 @@ GraphQLString
 
 
     Example query:
-    ::
+
+    .. code-block:: graphql
 
         {
             page(slug: "example-blog-page") {
@@ -95,9 +169,11 @@ GraphQLCollection
         multiple models (example below).
 
     In your models.py:
-    ::
+
+    .. code-block:: python
 
         from grapple.types import GraphQLString
+
 
         class BlogPage(Page):
             author = models.CharField(max_length=255)
@@ -108,30 +184,22 @@ GraphQLCollection
             graphql_fields = [
                 # Basic reference to Orderable model
                 GraphQLCollection(
-                    GraphQLForeignKey,
-                    "related_links",
-                    "home.BlogPageRelatedLink"
+                    GraphQLForeignKey, "related_links", "home.BlogPageRelatedLink"
                 ),
-
                 # Will return an array of just the url from each link
-                GraphQLCollection(
-                    GraphQLString,
-                    "related_urls",
-                    source="related_links.url"
-                ),
-
+                GraphQLCollection(GraphQLString, "related_urls", source="related_links.url"),
                 # Reference to Orderable model with pagination
                 GraphQLCollection(
                     GraphQLForeignKey,
                     "paginated_related_links",
                     "home.BlogPageRelatedLink",
-                    is_paginated_queryset=True
+                    is_paginated_queryset=True,
                 ),
             ]
 
-
     Example query:
-    ::
+
+    .. code-block:: graphql
 
         {
             page(slug: "example-blog-page") {
@@ -160,7 +228,7 @@ GraphQLCollection
 GraphQLInt
 ----------
 .. module:: grapple.models
-.. class:: GraphQLInt(field_name, required=False)
+.. class:: GraphQLInt(field_name, required=False, **kwargs)
 
     Used to serialize integer-based Django fields such as ``IntegerField``
     or ``PositiveSmallIntegerField``.
@@ -173,11 +241,37 @@ GraphQLInt
 
         Represents the field as non-nullable in the schema. This promises the client that it will have a value returned.
 
+    .. attribute:: kwargs
+
+        Useful keyword arguments:
+
+        * ``source`` (string)
+            You can pass a source string that is an attribute or method on the
+            class itself.
+
+            If used within a `StreamField`, the method will receive all values
+            from the instance via the `values` kwarg, e.g.:
+
+            .. code-block:: python
+
+                class SomeStructBlock(blocks.StructBlock):
+                    integer = blocks.IntegerBlock()
+
+                    graphql_fields = [
+                        GraphQLInt(
+                            field_name="some_name",
+                            source="some_method",
+                        )
+                    ]
+
+                    def some_method(self, values: Dict[str, Any] = None) -> Optional[int]:
+                        return values.get("integer") if values else None
+
 
 GraphQLFloat
 ------------
 .. module:: grapple.models
-.. class:: GraphQLFloat(field_name, required=False)
+.. class:: GraphQLFloat(field_name, required=False, **kwargs)
 
     Like ``GraphQLInt``, this field is used to serialize ``Float`` and ``Decimal`` fields.
 
@@ -189,11 +283,37 @@ GraphQLFloat
 
         Represents the field as non-nullable in the schema. This promises the client that it will have a value returned.
 
+    .. attribute:: kwargs
+
+        Useful keyword arguments:
+
+        * ``source`` (string)
+            You can pass a source string that is an attribute or method on the
+            class itself.
+
+            If used within a `StreamField`, the method will receive all values
+            from the instance via the `values` kwarg, e.g.:
+
+            .. code-block:: python
+
+                class SomeStructBlock(blocks.StructBlock):
+                    float = blocks.FloatBlock()
+
+                    graphql_fields = [
+                        GraphQLFloat(
+                            field_name="some_name",
+                            source="some_method",
+                        )
+                    ]
+
+                    def some_method(self, values: Dict[str, Any] = None) -> Optional[float]:
+                        return values.get("decimal") if values else None
+
 
 GraphQLBoolean
 --------------
 .. module:: grapple.models
-.. class:: GraphQLBoolean(field_name, required=False)
+.. class:: GraphQLBoolean(field_name, required=False, **kwargs)
 
     Used to serialize ``Boolean`` fields.
 
@@ -204,6 +324,32 @@ GraphQLBoolean
     .. attribute:: required (bool=False)
 
         Represents the field as non-nullable in the schema. This promises the client that it will have a value returned.
+
+    .. attribute:: kwargs
+
+        Useful keyword arguments:
+
+        * ``source`` (string)
+            You can pass a source string that is an attribute or method on the
+            class itself.
+
+            If used within a `StreamField`, the method will receive all values
+            from the instance via the `values` kwarg, e.g.:
+
+            .. code-block:: python
+
+                class SomeStructBlock(blocks.StructBlock):
+                    text = blocks.CharBlock()
+
+                    graphql_fields = [
+                        GraphQLBoolean(
+                            field_name="some_name",
+                            source="some_method",
+                        )
+                    ]
+
+                    def some_method(self, values: Dict[str, Any] = None) -> Optional[bool]:
+                        return bool(values.get("text")) if values else None
 
 
 GraphQLStreamfield
@@ -232,7 +378,7 @@ GraphQLStreamfield
 
         e.g.
 
-    ::
+    .. code-block:: python
 
         @register_streamfield_block
         class ButtonBlock(blocks.StructBlock):
@@ -252,18 +398,23 @@ GraphQLStreamfield
                 GraphQLString("text"),
                 GraphQLImage("image"),
                 GraphQLStreamfield("buttons"),
-                GraphQLStreamfield("mainbutton", is_list=False),  # this is a direct StructBlock, not a list of sub-blocks
+                GraphQLStreamfield(
+                    "mainbutton", is_list=False
+                ),  # this is a direct StructBlock, not a list of sub-blocks
             ]
+
 
         @register_paginated_query_field("blog_page")
         class BlogPage(Page):
-            body = StreamField([
-                ("text_and_buttons", TextAndButtonsBlock()),
-            ])
+            body = StreamField(
+                [
+                    ("text_and_buttons", TextAndButtonsBlock()),
+                ]
+            )
 
             graphql_fields = [GraphQLStreamfield("body")]
 
-    ::
+    .. code-block:: graphql
 
         # Example query, based on the above
         {
@@ -286,6 +437,7 @@ GraphQLStreamfield
                 }
             }
         }
+
 
 GraphQLSnippet
 --------------
@@ -314,24 +466,25 @@ GraphQLSnippet
 
     In your models.py:
 
-    ::
+    .. code-block:: python
 
         class BookPage(Page):
             advert = models.ForeignKey(
-                'demo.Advert',
+                "demo.Advert",
                 null=True,
                 blank=True,
                 on_delete=models.SET_NULL,
-                related_name='+'
+                related_name="+",
             )
 
             graphql_fields = [
-                GraphQLSnippet('advert', 'demo.Advert'),
+                GraphQLSnippet("advert", "demo.Advert"),
             ]
 
             content_panels = Page.content_panels + [
-                SnippetChooserPanel('advert'),
+                SnippetChooserPanel("advert"),
             ]
+
 
         @register_snippet
         class Advert(models.Model):
@@ -339,20 +492,20 @@ GraphQLSnippet
             text = models.CharField(max_length=255)
 
             graphql_fields = [
-                GraphQLString('url'),
-                GraphQLString('text'),
+                GraphQLString("url"),
+                GraphQLString("text"),
             ]
 
             panels = [
-                FieldPanel('url'),
-                FieldPanel('text'),
+                FieldPanel("url"),
+                FieldPanel("text"),
             ]
 
             def __str__(self):
                 return self.text
 
 
-    ::
+    .. code-block:: graphql
 
         # Example query
         {
@@ -386,23 +539,23 @@ GraphQLForeignKey
 
         Represents the field as non-nullable in the schema. This promises the client that it will have a value returned.
 
-    ::
+    .. code-block:: python
 
         class BookPage(Page):
             advert = models.ForeignKey(
-                'demo.Advert',
+                "demo.Advert",
                 null=True,
                 blank=True,
                 on_delete=models.SET_NULL,
-                related_name='+'
+                related_name="+",
             )
 
             graphql_fields = [
-                GraphQLSnippet('advert', 'demo.Advert'),
+                GraphQLSnippet("advert", "demo.Advert"),
             ]
 
             content_panels = Page.content_panels + [
-                SnippetChooserPanel('advert'),
+                SnippetChooserPanel("advert"),
             ]
 
 
@@ -462,8 +615,9 @@ GraphQLPage
         * ``required`` (bool=False)
             Represents the field as non-nullable in the schema. This promises the client that it will have a value returned.
         * ``source`` (string)
-            You can pass a source string that is an attribute or method on the model itself. It can also be several
-            layers deep and Grapple will handle the querying for you through multiple models.
+            You can pass a source string that is an attribute or method on the
+            model itself. It can also be several layers deep and Grapple will
+            handle the querying for you through multiple models.
 
 
 GraphQLTag
