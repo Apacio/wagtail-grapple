@@ -117,7 +117,9 @@ class BlogPage(HeadlessPreviewMixin, Page):
     content_panels = Page.content_panels + [
         FieldPanel("date"),
         ImageChooserPanel("hero_image"),
-        StreamFieldPanel("body"),
+        FieldPanel("body")
+        if settings.WAGTAIL_VERSION >= (3, 0)
+        else StreamFieldPanel("body"),
         FieldPanel("tags"),
         InlinePanel("related_links", label="Related links"),
         InlinePanel("authors", label="Authors"),
