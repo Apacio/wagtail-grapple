@@ -1,5 +1,6 @@
 import graphene
-from graphql.validation.rules import NoUnusedFragments, specified_rules
+from graphql.pyutils.frozen_error import FrozenError
+from graphql.validation import NoUnusedFragmentsRule, specified_rules
 
 try:
     from wagtail import hooks
@@ -18,7 +19,12 @@ from .settings import grapple_settings
 
 # We need to update specified_rules in-place so the change appears
 # everywhere it's been imported
-specified_rules[:] = [rule for rule in specified_rules if rule is not NoUnusedFragments]
+try:
+    specified_rules[:] = [
+        rule for rule in specified_rules if rule is not NoUnusedFragmentsRule
+    ]
+except FrozenError:
+    pass
 
 
 def create_schema():

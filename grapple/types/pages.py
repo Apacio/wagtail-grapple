@@ -3,7 +3,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 from graphene_django.types import DjangoObjectType
-from graphql.error import GraphQLLocatedError
+from graphql import GraphQLError
 
 try:
     from wagtail.models import Page as WagtailPage
@@ -11,6 +11,7 @@ try:
 except ImportError:
     from wagtail.core.models import Page as WagtailPage
     from wagtail.core.models import Site
+
 from wagtail_headless_preview.signals import preview_update
 
 from ..registry import registry
@@ -84,7 +85,7 @@ class PageInterface(graphene.Interface):
         """
         try:
             return self.get_parent().specific
-        except GraphQLLocatedError:
+        except GraphQLError:
             return WagtailPage.objects.none()
 
     def resolve_children(self, info, **kwargs):

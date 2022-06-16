@@ -92,6 +92,10 @@ def register_query_field(
                 if not kwargs:
                     return None
 
+                for k, v in dict(kwargs).items():
+                    if v is None:
+                        del kwargs[k]
+
                 try:
                     # If is a Page then only query live/public pages.
                     if issubclass(cls, Page):
@@ -150,6 +154,7 @@ def register_query_field(
             setattr(
                 schema, "resolve_" + field_name, MethodType(resolve_singular, schema)
             )
+
             setattr(
                 schema,
                 "resolve_" + plural_field_name,
@@ -206,6 +211,10 @@ def register_paginated_query_field(
                 # If no filters then return nothing.
                 if not kwargs:
                     return None
+
+                for k, v in dict(kwargs).items():
+                    if v is None:
+                        del kwargs[k]
 
                 try:
                     # If is a Page then only query live/public pages.
