@@ -1,29 +1,24 @@
 import inspect
 
 import graphene
+
+# TODO: use specific imports
 import wagtail
 import wagtail.documents.blocks
 import wagtail.embeds.blocks
 import wagtail.images.blocks
 import wagtail.snippets.blocks
-from django.conf import settings
-from django.template.loader import render_to_string
 from graphene.types import Scalar
 from graphene_django.converter import convert_django_field
-
-try:
-    from wagtail import blocks
-    from wagtail.fields import StreamField
-    from wagtail.rich_text import expand_db_html
-except ImportError:
-    from wagtail.core import blocks
-    from wagtail.core.fields import StreamField
-    from wagtail.core.rich_text import expand_db_html
+from wagtail import blocks
 from wagtail.embeds.blocks import EmbedValue
 from wagtail.embeds.embeds import get_embed
 from wagtail.embeds.exceptions import EmbedException
+from wagtail.fields import StreamField
+from wagtail.rich_text import RichText
 
 from ..registry import registry
+from .rich_text import RichText as RichTextType
 
 
 class GenericStreamFieldInterface(Scalar):
@@ -78,8 +73,13 @@ class StreamFieldInterface(graphene.Interface):
         if isinstance(self, blocks.StructValue):
             # This is the value for a nested StructBlock defined via GraphQLStreamfield
             return serialize_struct_obj(self)
-        if isinstance(self.value, dict):
+        elif isinstance(self.value, dict):
             return serialize_struct_obj(self.value)
+        elif isinstance(self.value, RichText):
+            # Ensure RichTextBlock raw value always returns the "internal format", rather than the conterted value
+            # as per https://docs.wagtail.io/en/stable/extending/rich_text_internals.html#data-format.
+            # Note that RichTextBlock.value will be rendered HTML by default.
+            return self.value.source
 
         return self.value
 
@@ -187,15 +187,14 @@ class StreamBlock(StructBlock):
         interfaces = (StreamFieldInterface,)
 
     def resolve_blocks(self, info, **kwargs):
-        stream_blocks = []
+        child_blocks = self.value.stream_block.child_blocks
 
-        for stream in self.value:
-            block_type = stream.block_type
-            value = stream.value
-            block = self.value.stream_block.child_blocks[block_type]
-            stream_blocks.append(StructBlockItem(block_type, block, value))
-
-        return stream_blocks
+        return [
+            StructBlockItem(
+                id=stream.id, block=child_blocks[stream.block_type], value=stream.value
+            )
+            for stream in self.value
+        ]
 
 
 class StreamFieldBlock(graphene.ObjectType):
@@ -298,10 +297,7 @@ class RichTextBlock(graphene.ObjectType):
         interfaces = (StreamFieldInterface,)
 
     def resolve_value(self, info, **kwargs):
-        # Allow custom markup for RichText
-        return render_to_string(
-            "wagtailcore/richtext.html", {"html": expand_db_html(self.value.source)}
-        )
+        return RichTextType.serialize(self.value.source)
 
 
 class RawHTMLBlock(graphene.ObjectType):
@@ -338,12 +334,6 @@ class ChoiceBlock(graphene.ObjectType):
         return choices
 
 
-def get_media_url(url):
-    if url[0] == "/":
-        return settings.BASE_URL + url
-    return url
-
-
 def get_embed_url(instance):
     return instance.value.url if hasattr(instance, "value") else instance.url
 
@@ -365,7 +355,7 @@ class EmbedBlock(graphene.ObjectType):
         interfaces = (StreamFieldInterface,)
 
     def resolve_url(self, info, **kwargs):
-        return get_media_url(get_embed_url(self))
+        return get_embed_url(self)
 
     def resolve_raw_value(self, info, **kwargs):
         if isinstance(self, EmbedValue):
@@ -442,6 +432,7 @@ def register_streamfield_blocks():
     from .documents import get_document_type
     from .images import get_image_type
     from .pages import PageInterface
+    from .snippets import SnippetTypes
 
     class PageChooserBlock(graphene.ObjectType):
         page = graphene.Field(PageInterface, required=True)
@@ -470,20 +461,28 @@ def register_streamfield_blocks():
         def resolve_image(self, info, **kwargs):
             return self.value
 
-    class SnippetChooserBlock(graphene.ObjectType):
-        snippet = graphene.String(required=True)
-
-        class Meta:
-            interfaces = (StreamFieldInterface,)
-
-        def resolve_snippet(self, info, **kwargs):
-            return self.value
-
     registry.streamfield_blocks.update(
         {
             blocks.PageChooserBlock: PageChooserBlock,
             wagtail.documents.blocks.DocumentChooserBlock: DocumentChooserBlock,
             wagtail.images.blocks.ImageChooserBlock: ImageChooserBlock,
-            wagtail.snippets.blocks.SnippetChooserBlock: SnippetChooserBlock,
         }
     )
+
+    SnippetObjectType = SnippetTypes.get_object_type()
+    if SnippetObjectType is not None:
+
+        class SnippetChooserBlock(graphene.ObjectType):
+            snippet = graphene.Field(SnippetObjectType, required=True)
+
+            class Meta:
+                interfaces = (StreamFieldInterface,)
+
+            def resolve_snippet(self, info, **kwargs):
+                return self.value
+
+        registry.streamfield_blocks.update(
+            {
+                wagtail.snippets.blocks.SnippetChooserBlock: SnippetChooserBlock,
+            }
+        )

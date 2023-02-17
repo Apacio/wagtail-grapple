@@ -3,6 +3,7 @@ from graphene_django import DjangoObjectType
 from wagtail.images import get_image_model
 from wagtail.images.models import Image as WagtailImage
 from wagtail.images.models import Rendition as WagtailImageRendition
+from wagtail.images.models import SourceImageIOError
 
 from ..registry import registry
 from ..settings import grapple_settings
@@ -51,7 +52,7 @@ class BaseImageObjectType(graphene.ObjectType):
         return self.width / self.height
 
     def resolve_sizes(self, info, **kwargs):
-        return "(max-width: {}px) 100vw, {}px".format(self.width, self.width)
+        return f"(max-width: {self.width}px) 100vw, {self.width}px"
 
     def resolve_tags(self, info, **kwargs):
         return self.tags.all()
@@ -93,7 +94,9 @@ class ImageObjectType(DjangoObjectType, BaseImageObjectType):
         jpegquality=graphene.Int(),
         webpquality=graphene.Int(),
     )
-    src_set = graphene.String(sizes=graphene.List(graphene.Int))
+    src_set = graphene.String(
+        sizes=graphene.List(graphene.Int), format=graphene.String()
+    )
 
     class Meta:
         model = WagtailImage
@@ -102,51 +105,50 @@ class ImageObjectType(DjangoObjectType, BaseImageObjectType):
         """
         Render a custom rendition of the current image.
         """
-        rendition = None
-        try:
-            filters = "|".join([f"{key}-{val}" for key, val in kwargs.items()])
+        filters = "|".join([f"{key}-{val}" for key, val in kwargs.items()])
 
-            # Only allowed the defined filters (thus renditions)
-            if rendition_allowed(filters):
+        # Only allowed the defined filters (thus renditions)
+        if rendition_allowed(filters):
+            try:
                 img = self.get_rendition(filters)
-                rendition_type = get_rendition_type()
+            except SourceImageIOError:
+                return
 
-                rendition = rendition_type(
-                    id=img.id,
-                    url=get_media_item_url(img),
-                    width=img.width,
-                    height=img.height,
-                    file=img.file,
-                    image=self,
-                )
-        except Exception:
-            pass
+            rendition_type = get_rendition_type()
 
-        return rendition
+            return rendition_type(
+                id=img.id,
+                url=get_media_item_url(img),
+                width=img.width,
+                height=img.height,
+                file=img.file,
+                image=self,
+            )
 
-    def resolve_src_set(self, info, sizes, **kwargs):
+    def resolve_src_set(self, info, sizes, format=None, **kwargs):
         """
         Generate src set of renditions.
         """
-        src_set = ""
-        try:
-            if self.file.name is not None:
-                rendition_list = [
-                    ImageObjectType.resolve_rendition(self, info, width=width)
-                    for width in sizes
-                    if rendition_allowed(f"width-{width}")
-                ]
-
-                src_set = ", ".join(
-                    [
-                        f"{get_media_item_url(img)} {img.width}w"
-                        for img in rendition_list
-                    ]
+        filter_suffix = f"|format-{format}" if format else ""
+        format_kwarg = {"format": format} if format else {}
+        if self.file.name is not None:
+            rendition_list = [
+                ImageObjectType.resolve_rendition(
+                    self, info, width=width, **format_kwarg
                 )
-        except Exception:
-            pass
+                for width in sizes
+                if rendition_allowed(f"width-{width}{filter_suffix}")
+            ]
 
-        return src_set
+            return ", ".join(
+                [
+                    f"{get_media_item_url(img)} {img.width}w"
+                    for img in rendition_list
+                    if img is not None
+                ]
+            )
+
+        return ""
 
 
 def get_image_type():
@@ -173,16 +175,23 @@ def ImagesQuery():
         def resolve_image(self, info, id, **kwargs):
             """Returns an image given the id, if in a public collection"""
             try:
-                return mdl.objects.filter(
-                    collection__view_restrictions__isnull=True
-                ).get(pk=id)
-            except BaseException:
+                return (
+                    mdl.objects.filter(collection__view_restrictions__isnull=True)
+                    .prefetch_renditions()
+                    .get(pk=id)
+                )
+            except mdl.DoesNotExist:
                 return None
 
         def resolve_images(self, info, **kwargs):
             """Returns all images in a public collection"""
-            qs = mdl.objects.filter(collection__view_restrictions__isnull=True)
-            return resolve_queryset(qs, info, **kwargs)
+            return resolve_queryset(
+                mdl.objects.filter(
+                    collection__view_restrictions__isnull=True
+                ).prefetch_renditions(),
+                info,
+                **kwargs,
+            )
 
         # Give name of the image type, used to generate mixins
         def resolve_image_type(self, info, **kwargs):

@@ -1,25 +1,21 @@
 import inspect
 from collections.abc import Iterable
 from types import MethodType
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, Union
 
 import graphene
+from django.apps import apps
+from django.core.exceptions import FieldDoesNotExist
 from django.db import models
-from django.template.loader import render_to_string
 from graphene_django.types import DjangoObjectType
-from wagtail.contrib.settings.models import BaseSetting
-
-try:
-    from wagtail.blocks import StructValue, stream_block
-    from wagtail.models import Page as WagtailPage
-    from wagtail.rich_text import RichText, expand_db_html
-except ImportError:
-    from wagtail.core.blocks import StructValue, stream_block
-    from wagtail.core.models import Page as WagtailPage
-    from wagtail.core.rich_text import RichText, expand_db_html
+from wagtail.blocks import StructValue, stream_block
+from wagtail.contrib.settings.models import BaseGenericSetting, BaseSiteSetting
 from wagtail.documents.models import AbstractDocument
+from wagtail.fields import RichTextField
 from wagtail.images.blocks import ImageChooserBlock
 from wagtail.images.models import AbstractImage, AbstractRendition
+from wagtail.models import Page as WagtailPage
+from wagtail.rich_text import RichText
 from wagtail.snippets.models import get_snippet_models
 
 from .helpers import field_middlewares, streamfield_types
@@ -28,15 +24,17 @@ from .settings import grapple_settings
 from .types.documents import DocumentObjectType
 from .types.images import ImageObjectType
 from .types.pages import Page, PageInterface
+from .types.rich_text import RichText as RichTextType
 from .types.streamfield import generate_streamfield_union
 
-try:
+if apps.is_installed("wagtailmedia"):
     from wagtailmedia.models import AbstractMedia
 
     from .types.media import MediaObjectType
 
     has_wagtail_media = True
-except ModuleNotFoundError:
+
+else:
     # TODO: find a better way to have this as an optional dependency
     class AbstractMedia:
         def __init__(self):
@@ -127,7 +125,7 @@ def register_model(cls: type, type_prefix: str):
             register_image_model(cls, type_prefix)
         elif has_wagtail_media and issubclass(cls, AbstractMedia):
             register_media_model(cls, type_prefix)
-        elif issubclass(cls, BaseSetting):
+        elif issubclass(cls, (BaseSiteSetting, BaseGenericSetting)):
             register_settings_model(cls, type_prefix)
         elif cls in get_snippet_models():
             register_snippet_model(cls, type_prefix)
@@ -216,6 +214,23 @@ def model_resolver(field):
         # If method then call and return result
         if callable(cls_field):
             return cls_field(info, **kwargs)
+
+        # Expand HTML if the value's field is richtext
+        if field.field_type is RichTextType:
+            # Rendering of html will be handled by the GraphQL executor calling
+            # RichText.serialize, due to being declared as GraphQLRichText rather than
+            # GraphQLString
+            return cls_field
+        try:
+            if hasattr(instance._meta, "get_field"):
+                field_model = instance._meta.get_field(field.field_source)
+            else:
+                field_model = instance._meta.fields[field.field_source]
+        except FieldDoesNotExist:
+            return cls_field
+
+        if type(field_model) is RichTextField:
+            return RichTextType.serialize(cls_field)
 
         # If none of those then just return field
         return cls_field
@@ -344,10 +359,7 @@ def get_field_value(instance, field_name: str):
     if isinstance(instance, StructValue):
         return instance[field_name]
     elif isinstance(instance.value, RichText):
-        # Allow custom markup for RichText
-        return render_to_string(
-            "wagtailcore/richtext.html", {"html": expand_db_html(instance.value.source)}
-        )
+        return RichTextType.serialize(instance.value.source)
     elif isinstance(instance.value, stream_block.StreamValue):
         stream_data = dict(instance.value.stream_data)
         return stream_data[field_name]
@@ -399,7 +411,7 @@ def custom_cls_resolver(*, cls, graphql_field):
             return lambda self, instance, info, **kwargs: getattr(
                 klass, graphql_field.field_source
             )
-        else:
+        elif callable(getattr(cls, graphql_field.field_source)):
             return lambda self, instance, info, **kwargs: getattr(
                 klass, graphql_field.field_source
             )(values=get_all_field_values(instance=instance, cls=cls))
@@ -412,7 +424,7 @@ def custom_cls_resolver(*, cls, graphql_field):
             return lambda self, instance, info, **kwargs: getattr(
                 klass, graphql_field.field_name
             )
-        else:
+        elif callable(getattr(cls, graphql_field.field_name)):
             return lambda self, instance, info, **kwargs: getattr(
                 klass, graphql_field.field_name
             )(values=get_all_field_values(instance=instance, cls=cls))
@@ -431,6 +443,7 @@ def build_streamfield_type(
     Build a graphql type for a StreamBlock or StructBlock class
     If it has custom fields then implement them.
     """
+
     # Create a new blank node type
     class Meta:
         if hasattr(cls, "graphql_types"):
@@ -563,7 +576,9 @@ def register_media_model(cls: Type[AbstractMedia], type_prefix: str):
         registry.media[cls] = media_node_type
 
 
-def register_settings_model(cls: Type[BaseSetting], type_prefix: str):
+def register_settings_model(
+    cls: Union[Type[BaseSiteSetting], Type[BaseGenericSetting]], type_prefix: str
+):
     """
     Create a graphene node type for a settings page.
     """

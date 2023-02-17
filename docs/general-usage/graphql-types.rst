@@ -70,8 +70,10 @@ accepts the following arguments:
     offset: PositiveInt
     order: String
     searchQuery: String
-    contentType: String
+    contentType: String           #  comma separated list of content types in app.Model notation
     inSite: Boolean
+    ancestor: PositiveInt         # ID of ancestor page to restrict results to
+    parent: PositiveInt           # ID of parent page to restrict results to
 
 
 The singular ``page`` field accepts the following arguments:
@@ -122,7 +124,10 @@ need for Gatsby Image features to work (see Handy Fragments page for more info):
     fileHash: String!
     renditions: [ImageRenditionObjectType]
     src: String
-    srcSet(sizes: [Int]): String
+    srcSet(
+        sizes: [Int]
+        format: String
+    ): String
     rendition(
         max: String
         min: String
@@ -245,7 +250,7 @@ the ``sites`` or ``site`` field on the root query type. Available fields for the
     hostname: String
     isDefaultSite: Boolean
     rootPage: PageInterface
-    page(id: Int, slug: String, urlPath: String, contentType: String, token: String, inSite: Boolean): PageInterface
+    page(id: Int, slug: String, urlPath: String, contentType: String, token: String): PageInterface
     pages(limit: PositiveInt, offset: PositiveInt, order: String, searchQuery: String, id: ID): [PageInterface]
 
 

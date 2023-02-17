@@ -7,18 +7,19 @@ from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
+from django.test import override_settings
 from django.test.client import RequestFactory
-from django.utils.safestring import SafeText
-from home.blocks import CarouselBlock, ImageGalleryImages
-from home.factories import BlogPageFactory, TextWithCallableBlockFactory
-
-try:
-    from wagtail.blocks import StreamValue
-    from wagtail.rich_text import RichText
-except ImportError:
-    from wagtail.core.blocks import StreamValue
-    from wagtail.core.rich_text import RichText
+from home.blocks import ButtonBlock, CarouselBlock, ImageGalleryImages
+from home.factories import (
+    AdvertFactory,
+    BlogPageFactory,
+    PersonFactory,
+    TextWithCallableBlockFactory,
+)
+from wagtail.blocks import CharBlock, StreamValue
+from wagtail.blocks.list_block import ListBlock, ListValue
 from wagtail.embeds.blocks import EmbedValue
+from wagtail.rich_text import RichText
 
 from example.tests.test_grapple import BaseGrappleTest
 
@@ -26,12 +27,36 @@ from example.tests.test_grapple import BaseGrappleTest
 class BlogTest(BaseGrappleTest):
     def setUp(self):
         super().setUp()
+        # FIXME: change back to setUpTestData once https://github.com/wagtail/wagtail/issues/9788 is fixed
+        self.richtext_sample = (
+            f'Text with a \'link\' to <a linktype="page" id="{self.home.id}">Home</a>'
+        )
+        self.richtext_sample_rendered = (
+            f"Text with a 'link' to <a href=\"{self.home.url}\">Home</a>"
+        )
 
-        # Create Blog
+        objectives_list = ListValue(
+            ListBlock(CharBlock()), values=["Read all of article!"]
+        )
+        buttons_list = ListValue(
+            ListBlock(ButtonBlock()),
+            values=[
+                {
+                    "button_text": "btn",
+                    "button_link": "https://www.graphql.com/",
+                }
+            ],
+        )
+        self.empty_buttons_list = ListValue(ListBlock(ButtonBlock()), values=[])
+
+        # Add a Blog post
         self.blog_page = BlogPageFactory(
             body=[
                 ("heading", "Test heading 1"),
-                ("paragraph", RichText("This is a paragraph.")),
+                (
+                    "paragraph",
+                    RichText(self.richtext_sample),
+                ),
                 ("heading", "Test heading 2"),
                 ("image", wagtail_factories.ImageFactory()),
                 ("decimal", decimal.Decimal(1.2)),
@@ -70,8 +95,8 @@ class BlogTest(BaseGrappleTest):
                         ),
                     },
                 ),
-                ("callout", {"text": RichText("<p>Hello, World</p>")}),
-                ("objectives", ["Read all of article!"]),
+                ("callout", {"text": RichText(self.richtext_sample)}),
+                ("objectives", objectives_list),
                 (
                     "video",
                     {
@@ -84,21 +109,24 @@ class BlogTest(BaseGrappleTest):
                     "text_and_buttons",
                     {
                         "text": "Button text",
-                        "buttons": [
-                            {
-                                "button_text": "btn",
-                                "button_link": "https://www.graphql.com/",
-                            }
-                        ],
+                        "buttons": buttons_list,
                         "mainbutton": {
                             "button_text": "Take me to the source",
                             "button_link": "https://wagtail.io/",
                         },
                     },
                 ),
+                (
+                    "block_with_name",
+                    {
+                        "name": "Test Name",
+                    },
+                ),
                 ("text_with_callable", TextWithCallableBlockFactory()),
             ],
             parent=self.home,
+            summary=self.richtext_sample,
+            extra_summary=self.richtext_sample,
         )
 
     def test_blog_page(self):
@@ -114,7 +142,7 @@ class BlogTest(BaseGrappleTest):
         executed = self.client.execute(query, variables={"id": self.blog_page.id})
 
         # Check title.
-        self.assertEquals(executed["data"]["page"]["title"], self.blog_page.title)
+        self.assertEqual(executed["data"]["page"]["title"], self.blog_page.title)
 
     def test_related_author_page(self):
         query = """
@@ -138,22 +166,23 @@ class BlogTest(BaseGrappleTest):
 
     def get_blocks_from_body(self, block_type, block_query="rawValue", page_id=None):
         query = """
-        query($id: Int) {
-            page(id: $id) {
-                ... on BlogPage {
-                    body {
+        query($id: Int) {{
+            page(id: $id) {{
+                ... on BlogPage {{
+                    body {{
                         blockType
-                        ... on %s {
-                            %s
-                        }
-                    }
-                }
-            }
-        }
-        """ % (
+                        ... on {} {{
+                            {}
+                        }}
+                    }}
+                }}
+            }}
+        }}
+        """.format(
             block_type,
             block_query,
         )
+
         executed = self.client.execute(
             query, variables={"id": page_id or self.blog_page.id}
         )
@@ -177,28 +206,82 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 # Test the values
-                self.assertEquals(query_blocks[count]["rawValue"], block.value)
+                self.assertEqual(query_blocks[count]["rawValue"], block.value)
                 # Increment the count
                 count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
 
-    def test_blog_body_richtextblock(self):
+    def test_streamfield_richtextblock(self):
         block_type = "RichTextBlock"
         query_blocks = self.get_blocks_from_body(block_type)
 
-        # Check output.
+        # Check the raw value.
         count = 0
-        for block in self.blog_page.body:
-            if type(block.block).__name__ == block_type:
-                # Test the values
-                self.assertEquals(
-                    query_blocks[count]["rawValue"], block.value.__html__()
+        for streamfield_block in self.blog_page.body:
+            if type(streamfield_block.block).__name__ == block_type:
+                self.assertEqual(
+                    query_blocks[count]["rawValue"], streamfield_block.value.source
                 )
-                # Increment the count
                 count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
+
+        # Check value.
+        query_blocks = self.get_blocks_from_body(block_type, block_query="value")
+        count = 0
+        for streamfield_block in self.blog_page.body:
+            if type(streamfield_block.block).__name__ == block_type:
+                self.assertEqual(
+                    query_blocks[count]["value"], self.richtext_sample_rendered
+                )
+                count += 1
+
+        with override_settings(GRAPPLE={"RICHTEXT_FORMAT": "raw"}):
+            query_blocks = self.get_blocks_from_body(block_type, block_query="value")
+            count = 0
+            for streamfield_block in self.blog_page.body:
+                if type(streamfield_block.block).__name__ == block_type:
+                    self.assertEqual(query_blocks[count]["value"], self.richtext_sample)
+
+    def test_richtext(self):
+        query = """
+        query($id: Int) {
+            page(id: $id) {
+                ... on BlogPage {
+                    summary
+                    stringSummary
+                    extraSummary
+                }
+            }
+        }
+        """
+        executed = self.client.execute(query, variables={"id": self.blog_page.id})
+
+        # Check summary declared as GraphQLRichText
+        self.assertEqual(
+            executed["data"]["page"]["summary"], self.richtext_sample_rendered
+        )
+
+        # Check summary declared as GraphQLString, with custom name
+        self.assertEqual(
+            executed["data"]["page"]["stringSummary"], self.richtext_sample_rendered
+        )
+
+        # Check rich text field declared as GraphQLString, default field name
+        self.assertEqual(
+            executed["data"]["page"]["extraSummary"], self.richtext_sample_rendered
+        )
+
+        with override_settings(GRAPPLE={"RICHTEXT_FORMAT": "raw"}):
+            executed = self.client.execute(query, variables={"id": self.blog_page.id})
+            self.assertEqual(executed["data"]["page"]["summary"], self.richtext_sample)
+            self.assertEqual(
+                executed["data"]["page"]["stringSummary"], self.richtext_sample
+            )
+            self.assertEqual(
+                executed["data"]["page"]["extraSummary"], self.richtext_sample
+            )
 
     def test_blog_body_imagechooserblock(self):
         block_type = "ImageChooserBlock"
@@ -217,17 +300,17 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 # Test the values
-                self.assertEquals(
+                self.assertEqual(
                     query_blocks[count]["image"]["id"], str(block.value.id)
                 )
-                self.assertEquals(
+                self.assertEqual(
                     query_blocks[count]["image"]["src"],
                     settings.BASE_URL + block.value.file.url,
                 )
                 # Increment the count
                 count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
 
     def test_blog_body_imagechooserblock_in_streamblock(self):
         block_type = "CarouselBlock"
@@ -257,18 +340,21 @@ class BlogTest(BaseGrappleTest):
 
     def test_blog_body_calloutblock(self):
         block_type = "CalloutBlock"
-        query_blocks = self.get_blocks_from_body(
-            block_type,
-            block_query="""
-                text
-            """,
-        )
+        query_blocks = self.get_blocks_from_body(block_type, block_query="text")
 
-        # Check HTML is string
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 html = query_blocks[0]["text"]
-                self.assertEquals(type(html), SafeText)
+                self.assertIsInstance(html, str)
+                self.assertEqual(html, self.richtext_sample_rendered)
+
+        with override_settings(GRAPPLE={"RICHTEXT_FORMAT": "raw"}):
+            query_blocks = self.get_blocks_from_body(block_type, block_query="text")
+            for block in self.blog_page.body:
+                if type(block.block).__name__ == block_type:
+                    html = query_blocks[0]["text"]
+                    self.assertIsInstance(html, str)
+                    self.assertEqual(html, self.richtext_sample)
 
     def test_blog_body_decimalblock(self):
         block_type = "DecimalBlock"
@@ -279,11 +365,11 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 # Test the values
-                self.assertEquals(query_blocks[count]["rawValue"], str(block.value))
+                self.assertEqual(query_blocks[count]["rawValue"], str(block.value))
                 # Increment the count
                 count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
 
     def test_blog_body_dateblock(self):
         block_type = "DateBlock"
@@ -294,11 +380,11 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 # Test the values
-                self.assertEquals(query_blocks[count]["rawValue"], str(block.value))
+                self.assertEqual(query_blocks[count]["rawValue"], str(block.value))
                 # Increment the count
                 count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
 
     def test_blog_body_datetimeblock(self):
         block_type = "DateTimeBlock"
@@ -312,14 +398,14 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 # Test the values
-                self.assertEquals(
+                self.assertEqual(
                     query_blocks[count]["value"],
                     block.value.strftime(date_format_string),
                 )
                 # Increment the count
                 count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
 
     def test_blog_body_imagegalleryblock(self):
         block_type = "ImageGalleryBlock"
@@ -341,15 +427,15 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 # Test the values
-                self.assertEquals(
+                self.assertEqual(
                     query_blocks[count]["title"], str(block.value["title"])
                 )
                 for key, image in enumerate(query_blocks[count]["images"]):
-                    self.assertEquals(
+                    self.assertEqual(
                         image["image"]["id"],
                         str(block.value["images"][key].value["image"].id),
                     )
-                    self.assertEquals(
+                    self.assertEqual(
                         image["image"]["src"],
                         settings.BASE_URL
                         + str(block.value["images"][key].value["image"].file.url),
@@ -357,7 +443,7 @@ class BlogTest(BaseGrappleTest):
                 # Increment the count
                 count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
 
     def test_blog_body_objectives(self):
         block_type = "ListBlock"
@@ -373,12 +459,12 @@ class BlogTest(BaseGrappleTest):
             """,
         )
         # Check we have exactly one value
-        self.assertEquals(len(query_blocks), 1)
+        self.assertEqual(len(query_blocks), 1)
         # Check that first value matches hardcoded value
         first_block = query_blocks[0]
         first_item = first_block.get("items", [])[0]
         first_value = first_item.get("value")
-        self.assertEquals(first_value, "Read all of article!")
+        self.assertEqual(first_value, "Read all of article!")
 
     def test_blog_embed(self):
         query = """
@@ -410,14 +496,14 @@ class BlogTest(BaseGrappleTest):
             "height": 113,
             "html": '<iframe width="200" height="113" src="https://www.youtube.com/embed/_U79Wc965vw?feature=oembed" '
             'frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; '
-            'picture-in-picture" allowfullscreen></iframe>',
+            'picture-in-picture; web-share" allowfullscreen title="Wagtail Space 2018"></iframe>',
         }
         for block in body:
             if block["blockType"] == "VideoBlock":
                 embed = block["youtubeLink"]
                 self.assertTrue(isinstance(embed["url"], str))
-                self.assertEquals(embed["embed"], raw_embed["html"])
-                self.assertEquals(embed["rawEmbed"], json.dumps(raw_embed))
+                self.assertEqual(embed["embed"], raw_embed["html"])
+                self.assertEqual(embed["rawEmbed"], json.dumps(raw_embed))
                 return
 
         self.fail("VideoBlock type not instantiated in Streamfield")
@@ -448,15 +534,118 @@ class BlogTest(BaseGrappleTest):
             # Test the values
             page_data = query_blocks[count]["page"]
             page = block.value
-            self.assertEquals(page_data["date"], str(page.date))
-            self.assertEquals(
+            self.assertEqual(page_data["date"], str(page.date))
+            self.assertEqual(
                 page_data["authors"],
                 list(page.authors.values_list("person__name", flat=True)),
             )
             # Increment the count
             count += 1
         # Check that we test all blocks that were returned.
-        self.assertEquals(len(query_blocks), count)
+        self.assertEqual(len(query_blocks), count)
+
+    def test_blog_body_snippetchooserblock_advert(self):
+        url = "https://http.cat"
+        text = "cats"
+        blog_page = BlogPageFactory(
+            parent=self.home,
+            body=[
+                (
+                    "advert",
+                    AdvertFactory(url=url, text=text, rich_text=self.richtext_sample),
+                ),
+            ],
+        )
+        block_type = "SnippetChooserBlock"
+        block_query = """
+        snippet {
+            ... on Advert {
+                url
+                text
+            }
+        }
+        """
+        query_blocks = self.get_blocks_from_body(
+            block_type, block_query=block_query, page_id=blog_page.id
+        )
+        block = query_blocks[0]
+        self.assertEqual(block["snippet"]["url"], url)
+        self.assertEqual(block["snippet"]["text"], text)
+
+    def test_blog_body_snippetchooserblock_advert_rich_text(self):
+        blog_page = BlogPageFactory(
+            parent=self.home,
+            body=[
+                (
+                    "advert",
+                    AdvertFactory(
+                        rich_text=self.richtext_sample,
+                        extra_rich_text=self.richtext_sample,
+                    ),
+                ),
+            ],
+        )
+        block_type = "SnippetChooserBlock"
+        block_query = """
+        snippet {
+            ... on Advert {
+                richText
+                stringRichText
+                extraRichText
+            }
+        }
+        """
+        query_blocks = self.get_blocks_from_body(
+            block_type, block_query=block_query, page_id=blog_page.id
+        )
+        block = query_blocks[0]
+
+        # Declared as GraphQLRichText
+        self.assertEqual(block["snippet"]["richText"], self.richtext_sample_rendered)
+
+        # Declared as GraphQLString, custom name/source
+        self.assertEqual(
+            block["snippet"]["stringRichText"], self.richtext_sample_rendered
+        )
+
+        # Declared as GraphQLString, default name
+        self.assertEqual(
+            block["snippet"]["extraRichText"], self.richtext_sample_rendered
+        )
+
+        with override_settings(GRAPPLE={"RICHTEXT_FORMAT": "raw"}):
+            query_blocks = self.get_blocks_from_body(
+                block_type, block_query=block_query, page_id=blog_page.id
+            )
+            block = query_blocks[0]
+            self.assertEqual(block["snippet"]["richText"], self.richtext_sample)
+            self.assertEqual(block["snippet"]["stringRichText"], self.richtext_sample)
+            self.assertEqual(block["snippet"]["extraRichText"], self.richtext_sample)
+
+    def test_blog_body_snippetchooserblock_person(self):
+        name = "Jane Citizen"
+        job = "Frobnicator"
+        blog_page = BlogPageFactory(
+            parent=self.home,
+            body=[
+                ("person", PersonFactory(name=name, job=job)),
+            ],
+        )
+        block_type = "SnippetChooserBlock"
+        block_query = """
+        snippet {
+            ... on Person {
+                name
+                job
+            }
+        }
+        """
+        query_blocks = self.get_blocks_from_body(
+            block_type, block_query=block_query, page_id=blog_page.id
+        )
+        block = query_blocks[0]
+        self.assertEqual(block["snippet"]["name"], name)
+        self.assertEqual(block["snippet"]["job"], job)
 
     # Next 2 tests are used to test the Collection API, both ForeignKey and nested field extraction.
     def test_blog_page_related_links(self):
@@ -546,13 +735,13 @@ class BlogTest(BaseGrappleTest):
         self.assertTrue(pagination["prevPage"] is None)
         self.assertTrue(isinstance(pagination["nextPage"], int))
         self.assertTrue(isinstance(pagination["totalPages"], int))
-        self.assertEquals(pagination["total"], 8)
-        self.assertEquals(pagination["count"], 5)
-        self.assertEquals(pagination["perPage"], per_page)
-        self.assertEquals(pagination["currentPage"], page)
-        self.assertEquals(pagination["prevPage"], None)
-        self.assertEquals(pagination["nextPage"], 2)
-        self.assertEquals(pagination["totalPages"], 2)
+        self.assertEqual(pagination["total"], 8)
+        self.assertEqual(pagination["count"], 5)
+        self.assertEqual(pagination["perPage"], per_page)
+        self.assertEqual(pagination["currentPage"], page)
+        self.assertEqual(pagination["prevPage"], None)
+        self.assertEqual(pagination["nextPage"], 2)
+        self.assertEqual(pagination["totalPages"], 2)
 
         page = 2
         executed = self.client.execute(
@@ -574,13 +763,13 @@ class BlogTest(BaseGrappleTest):
         self.assertTrue(isinstance(pagination["prevPage"], int))
         self.assertTrue(pagination["nextPage"] is None)
         self.assertTrue(isinstance(pagination["totalPages"], int))
-        self.assertEquals(pagination["total"], 8)
-        self.assertEquals(pagination["count"], 3)
-        self.assertEquals(pagination["perPage"], per_page)
-        self.assertEquals(pagination["currentPage"], page)
-        self.assertEquals(pagination["prevPage"], 1)
-        self.assertEquals(pagination["nextPage"], None)
-        self.assertEquals(pagination["totalPages"], 2)
+        self.assertEqual(pagination["total"], 8)
+        self.assertEqual(pagination["count"], 3)
+        self.assertEqual(pagination["perPage"], per_page)
+        self.assertEqual(pagination["currentPage"], page)
+        self.assertEqual(pagination["prevPage"], 1)
+        self.assertEqual(pagination["nextPage"], None)
+        self.assertEqual(pagination["totalPages"], 2)
 
     def test_structvalue_block(self):
         block_type = "TextAndButtonsBlock"
@@ -600,8 +789,8 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 buttons = query_blocks[0]["buttons"]
-                self.assertEquals(buttons[0]["buttonText"], "btn")
-                self.assertEquals(buttons[0]["buttonLink"], "https://www.graphql.com/")
+                self.assertEqual(buttons[0]["buttonText"], "btn")
+                self.assertEqual(buttons[0]["buttonLink"], "https://www.graphql.com/")
 
     def test_nested_structvalue_block(self):
         block_type = "TextAndButtonsBlock"
@@ -621,12 +810,44 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 button = query_blocks[0]["mainbutton"]
-                self.assertEquals(button["buttonText"], "Take me to the source")
-                self.assertEquals(button["buttonLink"], "https://wagtail.io/")
+                self.assertEqual(button["buttonText"], "Take me to the source")
+                self.assertEqual(button["buttonLink"], "https://wagtail.io/")
+
+    def test_nested_structvalue_block_id(self):
+        block_type = "CarouselBlock"
+        query_blocks = self.get_blocks_from_body(
+            block_type,
+            block_query="""
+                blocks {
+                    ...on ImageChooserBlock {
+                        id
+                    }
+                }
+            """,
+        )
+
+        blocks = query_blocks[0]["blocks"]
+
+        # Check that the id returned matches the original block's ID
+        for block in self.blog_page.body:
+            if type(block.block).__name__ == block_type:
+                for i, image_block in enumerate(block.value):
+                    self.assertEqual(blocks[i]["id"], image_block.id)
+
+    def test_block_with_name(self):
+        block_type = "BlockWithName"
+        block_query = "name"
+        query_blocks = self.get_blocks_from_body(block_type, block_query=block_query)
+
+        for block in self.blog_page.body:
+            if type(block.block).__name__ == block_type:
+                result = query_blocks[0][block_query]
+                self.assertEqual("Test Name", result)
 
     def test_empty_list_in_structblock(self):
         another_blog_post = BlogPageFactory(
-            body=[("text_and_buttons", {"buttons": []})], parent=self.home
+            body=[("text_and_buttons", {"buttons": self.empty_buttons_list})],
+            parent=self.home,
         )
         block_type = "TextAndButtonsBlock"
         block_query = """
@@ -660,6 +881,7 @@ class BlogTest(BaseGrappleTest):
         request.user = AnonymousUser()
         results = self.client.execute(query, context_value=request)
 
+        self.assertNotIn("errors", results)
         self.assertTrue("firstPost" in results["data"])
         self.assertEqual(int(results["data"]["firstPost"]["id"]), self.blog_page.id)
 
@@ -705,7 +927,7 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 result = query_blocks[0][block_query]
-                self.assertEquals("A simple string property.", result)
+                self.assertEqual("A simple string property.", result)
 
     def test_graphqlstring_method_in_structblock(self):
         block_type = "TextWithCallableBlock"
@@ -729,7 +951,7 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 result = query_blocks[0][block_query]
-                self.assertEquals(5, result)
+                self.assertEqual(5, result)
 
     def test_graphqlint_method_in_structblock(self):
         block_type = "TextWithCallableBlock"
@@ -752,7 +974,7 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 result = query_blocks[0][block_query]
-                self.assertEquals(0.1, result)
+                self.assertEqual(0.1, result)
 
     def test_graphqlfloat_method_in_structblock(self):
         block_type = "TextWithCallableBlock"
@@ -775,7 +997,7 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 result = query_blocks[0][block_query]
-                self.assertEquals(1, result)
+                self.assertEqual(1, result)
 
     def test_graphqlboolean_method_in_structblock(self):
         block_type = "TextWithCallableBlock"
@@ -798,7 +1020,7 @@ class BlogTest(BaseGrappleTest):
         for block in self.blog_page.body:
             if type(block.block).__name__ == block_type:
                 result = query_blocks[0][block_query]
-                self.assertEquals("A field property.", result)
+                self.assertEqual("A field property.", result)
 
     def test_graphqlfield_method_in_structblock(self):
         block_type = "TextWithCallableBlock"
@@ -812,3 +1034,21 @@ class BlogTest(BaseGrappleTest):
 
                 # Ensure TextWithCallableBlock.get_field_method called.
                 self.assertIn("text-with-callable", result)
+
+    def test_custom_property(self):
+        query = """
+        query($id: Int) {
+            page(id: $id) {
+                ... on BlogPage {
+                    customProperty
+                }
+            }
+        }
+        """
+        executed = self.client.execute(query, variables={"id": self.blog_page.id})
+
+        # Check custom property.
+        self.assertEqual(
+            json.loads(executed["data"]["page"]["customProperty"]),
+            self.blog_page.custom_property,
+        )

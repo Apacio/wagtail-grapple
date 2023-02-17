@@ -1,47 +1,69 @@
-import inspect
 import os
-import sys
+from pydoc import locate
 from unittest.mock import patch
 
 import wagtail_factories
-
-from grapple.types.images import rendition_allowed
-
-if sys.version_info >= (3, 7):
-    from builtins import dict as dict_type
-else:
-    from collections import OrderedDict as dict_type
-
-from pydoc import locate
-
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, TestCase, override_settings
 from graphene.test import Client
 from home.factories import BlogPageFactory
-from home.models import HomePage
-
-try:
-    from wagtail.models import Page, Site
-except ImportError:
-    from wagtail.core.models import Page, Site
+from home.models import GlobalSocialMediaSettings, HomePage, SocialMediaSettings
 from wagtail.documents import get_document_model
 from wagtail.images import get_image_model
+from wagtail.models import Page, Site
 from wagtailmedia.models import get_media_model
 
 from grapple.schema import create_schema
+from grapple.types.images import rendition_allowed
 
 SCHEMA = locate(settings.GRAPHENE["SCHEMA"])
 MIDDLEWARE_OBJECTS = [
     locate(middleware) for middleware in settings.GRAPHENE["MIDDLEWARE"]
 ]
-MIDDLEWARE = [item() if inspect.isclass(item) else item for item in MIDDLEWARE_OBJECTS]
+MIDDLEWARE = [item() if isinstance(item, type) else item for item in MIDDLEWARE_OBJECTS]
 
 
 class BaseGrappleTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.home = HomePage.objects.first()
+
     def setUp(self):
         self.client = Client(SCHEMA, middleware=MIDDLEWARE)
-        self.home = HomePage.objects.first()
+
+
+class BaseGrappleTestWithIntrospection(BaseGrappleTest):
+    def setUp(self):
+        super().setUp()
+        query = """
+        query availableQueries {
+          __schema {
+            queryType {
+              fields{
+                name
+                type {
+                  kind
+                  ofType {
+                    name
+                    kind
+                    ofType {
+                        kind
+                        name
+                        ofType {
+                            kind
+                            name
+                        }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        executed = self.client.execute(query)
+        self.available_queries = executed["data"]["__schema"]["queryType"]["fields"]
 
 
 class PagesTest(BaseGrappleTest):
@@ -49,6 +71,17 @@ class PagesTest(BaseGrappleTest):
         super().setUp()
         self.factory = RequestFactory()
         self.blog_post = BlogPageFactory(parent=self.home)
+
+        self.site_different_hostname = wagtail_factories.SiteFactory(
+            hostname="different-hostname.localhost",
+            site_name="Grapple test site (different hostname)",
+        )
+
+        self.site_different_hostname_different_port = wagtail_factories.SiteFactory(
+            hostname="different-hostname.localhost",
+            port=8000,
+            site_name="Grapple test site (different hostname/port)",
+        )
 
     def test_pages(self):
         query = """
@@ -64,18 +97,18 @@ class PagesTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(type(executed["data"]), dict_type)
-        self.assertEquals(type(executed["data"]["pages"]), list)
-        self.assertEquals(type(executed["data"]["pages"][0]), dict_type)
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["pages"]), list)
+        self.assertEqual(type(executed["data"]["pages"][0]), dict)
 
         pages_data = executed["data"]["pages"]
-        self.assertEquals(pages_data[0]["contentType"], "home.HomePage")
-        self.assertEquals(pages_data[0]["pageType"], "HomePage")
-        self.assertEquals(pages_data[1]["contentType"], "home.BlogPage")
-        self.assertEquals(pages_data[1]["pageType"], "BlogPage")
+        self.assertEqual(pages_data[0]["contentType"], "home.HomePage")
+        self.assertEqual(pages_data[0]["pageType"], "HomePage")
+        self.assertEqual(pages_data[1]["contentType"], "home.BlogPage")
+        self.assertEqual(pages_data[1]["pageType"], "BlogPage")
 
         pages = Page.objects.filter(depth__gt=1)
-        self.assertEquals(len(executed["data"]["pages"]), pages.count())
+        self.assertEqual(len(executed["data"]["pages"]), pages.count())
 
     @override_settings(GRAPPLE={"PAGE_SIZE": 1, "MAX_PAGE_SIZE": 1})
     def test_pages_limit(self):
@@ -92,14 +125,14 @@ class PagesTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(type(executed["data"]), dict_type)
-        self.assertEquals(type(executed["data"]["pages"]), list)
-        self.assertEquals(type(executed["data"]["pages"][0]), dict_type)
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["pages"]), list)
+        self.assertEqual(type(executed["data"]["pages"][0]), dict)
 
         pages_data = executed["data"]["pages"]
-        self.assertEquals(pages_data[0]["contentType"], "home.HomePage")
-        self.assertEquals(pages_data[0]["pageType"], "HomePage")
-        self.assertEquals(len(executed["data"]["pages"]), 1)
+        self.assertEqual(pages_data[0]["contentType"], "home.HomePage")
+        self.assertEqual(pages_data[0]["pageType"], "HomePage")
+        self.assertEqual(len(executed["data"]["pages"]), 1)
 
     def test_pages_in_site(self):
         query = """
@@ -115,14 +148,138 @@ class PagesTest(BaseGrappleTest):
         request = self.factory.get("/")
         executed = self.client.execute(query, context_value=request)
 
-        self.assertEquals(type(executed["data"]), dict_type)
-        self.assertEquals(type(executed["data"]["pages"]), list)
-        self.assertEquals(type(executed["data"]["pages"][0]), dict_type)
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["pages"]), list)
+        self.assertEqual(type(executed["data"]["pages"][0]), dict)
 
         site = Site.find_for_request(request)
-        pages = Page.objects.in_site(site)
+        pages = Page.objects.in_site(site).live().public().filter(depth__gt=1)
 
-        self.assertEquals(len(executed["data"]["pages"]), pages.count())
+        self.assertEqual(len(executed["data"]["pages"]), pages.count())
+
+    def test_pages_site(self):
+        site = Site.objects.get(is_default_site=True)
+
+        query = """
+        query($site: String) {
+            pages(site: $site) {
+                title
+                contentType
+                pageType
+            }
+        }
+        """
+
+        request = self.factory.get("/")
+        executed = self.client.execute(
+            query,
+            context_value=request,
+            variables={
+                "site": site.hostname,
+            },
+        )
+
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["pages"]), list)
+        self.assertEqual(type(executed["data"]["pages"][0]), dict)
+
+        pages = Page.objects.in_site(site).live().public().filter(depth__gt=1)
+
+        self.assertEqual(len(executed["data"]["pages"]), pages.count())
+
+    def test_pages_site_errors_when_multiple_sites_match_hostname_and_port_unspecified(
+        self,
+    ):
+        query = """
+        query($site: String) {
+            pages(site: $site) {
+                title
+                contentType
+                pageType
+            }
+        }
+        """
+
+        executed = self.client.execute(
+            query, variables={"site": self.site_different_hostname.hostname}
+        )
+
+        self.assertEqual(
+            executed,
+            {
+                "errors": [
+                    {
+                        "message": "Your 'site' filter value of "
+                        "'different-hostname.localhost' returned multiple "
+                        "sites. Try adding a port number (for example: "
+                        "'different-hostname.localhost:80').",
+                        "locations": [{"line": 3, "column": 13}],
+                        "path": ["pages"],
+                    }
+                ],
+                "data": None,
+            },
+        )
+
+    def test_pages_site_with_different_port(self):
+        query = """
+        query($site: String) {
+            pages(site: $site) {
+                title
+                contentType
+                pageType
+            }
+        }
+        """
+
+        executed = self.client.execute(
+            query,
+            variables={"site": self.site_different_hostname.hostname + ":8000"},
+        )
+
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["pages"]), list)
+
+        pages = (
+            Page.objects.in_site(self.site_different_hostname)
+            .live()
+            .public()
+            .filter(depth__gt=1)
+        )
+
+        self.assertEqual(len(executed["data"]["pages"]), pages.count())
+
+    def test_pages_site_and_in_site_cannot_be_used_together(
+        self,
+    ):
+        query = """
+        query($site: String) {
+            pages(site: $site, inSite: true) {
+                title
+                contentType
+                pageType
+            }
+        }
+        """
+
+        executed = self.client.execute(
+            query, variables={"site": self.site_different_hostname.hostname}
+        )
+
+        self.assertEqual(
+            executed,
+            {
+                "errors": [
+                    {
+                        "message": "The 'site' and 'in_site' filters cannot be used at "
+                        "the same time.",
+                        "locations": [{"line": 3, "column": 13}],
+                        "path": ["pages"],
+                    }
+                ],
+                "data": None,
+            },
+        )
 
     def test_pages_content_type_filter(self):
         query = """
@@ -140,7 +297,7 @@ class PagesTest(BaseGrappleTest):
             query, variables={"content_type": "home.HomePage"}
         )
         data = results["data"]["pages"]
-        self.assertEquals(len(data), 1)
+        self.assertEqual(len(data), 1)
         self.assertEqual(int(data[0]["id"]), self.home.id)
 
         another_post = BlogPageFactory(parent=self.home)
@@ -151,6 +308,16 @@ class PagesTest(BaseGrappleTest):
         self.assertEqual(len(data), 2)
         self.assertListEqual(
             [int(p["id"]) for p in data], [self.blog_post.id, another_post.id]
+        )
+
+        results = self.client.execute(
+            query, variables={"content_type": "home.HomePage,home.BlogPage"}
+        )
+        data = results["data"]["pages"]
+        self.assertEqual(len(data), 3)
+        self.assertListEqual(
+            [int(p["id"]) for p in data],
+            [self.home.id, self.blog_post.id, another_post.id],
         )
 
         results = self.client.execute(
@@ -172,12 +339,145 @@ class PagesTest(BaseGrappleTest):
 
         executed = self.client.execute(query, variables={"id": self.blog_post.id})
 
-        self.assertEquals(type(executed["data"]), dict_type)
-        self.assertEquals(type(executed["data"]["page"]), dict_type)
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["page"]), dict)
 
         page_data = executed["data"]["page"]
-        self.assertEquals(page_data["contentType"], "home.BlogPage")
-        self.assertEquals(page_data["parent"]["contentType"], "home.HomePage")
+        self.assertEqual(page_data["contentType"], "home.BlogPage")
+        self.assertEqual(page_data["parent"]["contentType"], "home.HomePage")
+
+    def test_pages_ancestor_filter(self):
+        p1_1 = BlogPageFactory(slug="D1-1", parent=self.home)
+        p1_1_1 = BlogPageFactory(slug="D1-1-1", parent=p1_1)
+        BlogPageFactory(slug="D1-1-1-1", parent=p1_1_1)
+        BlogPageFactory(slug="D1-1-1-2", parent=p1_1_1)
+        p1_1_2 = BlogPageFactory(slug="D1-1-2", parent=p1_1)
+        BlogPageFactory(slug="D1-1-2-1", parent=p1_1_2)
+        BlogPageFactory(slug="D1-1-2-2", parent=p1_1_2)
+        p1_2 = BlogPageFactory(slug="D1-2", parent=self.home)
+        p1_2_1 = BlogPageFactory(slug="D1-2-1", parent=p1_2)
+        BlogPageFactory(slug="D1-2-1-1", parent=p1_2_1)
+        BlogPageFactory(slug="D1-2-1-2", parent=p1_2_1)
+        p1_2_2 = BlogPageFactory(slug="D1-2-2", parent=p1_2)
+        BlogPageFactory(slug="D1-2-2-1", parent=p1_2_2)
+        BlogPageFactory(slug="D1-2-2-2", parent=p1_2_2)
+
+        query = """
+        query($ancestor: ID) {
+            pages(ancestor: $ancestor) {
+                id
+                urlPath
+                depth
+                live
+                contentType
+                pageType
+            }
+        }
+        """
+
+        executed = self.client.execute(query, variables={"ancestor": p1_2.id})
+        page_data = executed["data"].get("pages")
+        self.assertEqual(len(page_data), 6)
+        for page in page_data:
+            self.assertTrue(page["urlPath"].startswith(p1_2.url_path))
+
+    def test_pages_parent_filter(self):
+        p1_1 = BlogPageFactory(slug="D1-1", parent=self.home)
+        p1_1_1 = BlogPageFactory(slug="D1-1-1", parent=p1_1)
+        BlogPageFactory(slug="D1-1-1-1", parent=p1_1_1)
+        BlogPageFactory(slug="D1-1-1-2", parent=p1_1_1)
+        p1_1_2 = BlogPageFactory(slug="D1-1-2", parent=p1_1)
+        BlogPageFactory(slug="D1-1-2-1", parent=p1_1_2)
+        BlogPageFactory(slug="D1-1-2-2", parent=p1_1_2)
+        p1_2 = BlogPageFactory(slug="D1-2", parent=self.home)
+        p1_2_1 = BlogPageFactory(slug="D1-2-1", parent=p1_2)
+        BlogPageFactory(slug="D1-2-1-1", parent=p1_2_1)
+        BlogPageFactory(slug="D1-2-1-2", parent=p1_2_1)
+        p1_2_2 = BlogPageFactory(slug="D1-2-2", parent=p1_2)
+        BlogPageFactory(slug="D1-2-2-1", parent=p1_2_2)
+        BlogPageFactory(slug="D1-2-2-2", parent=p1_2_2)
+
+        query = """
+        query($parent: ID) {
+            pages(parent: $parent) {
+                id
+                urlPath
+                depth
+                live
+                contentType
+                pageType
+            }
+        }
+        """
+
+        executed = self.client.execute(query, variables={"parent": p1_2.id})
+        page_data = executed["data"].get("pages")
+
+        self.assertEqual(len(page_data), 2)
+        for page in page_data:
+            self.assertTrue(page["urlPath"].startswith(p1_2.url_path))
+            self.assertEqual(page["depth"], p1_2.depth + 1)
+
+
+class PagesSearchTest(BaseGrappleTest):
+    @classmethod
+    def setUpTestData(cls):
+        cls.home = HomePage.objects.first()
+        BlogPageFactory(title="Alpha", parent=cls.home)
+        BlogPageFactory(title="Gamma Beta", parent=cls.home)
+        BlogPageFactory(title="Alpha Beta", parent=cls.home)
+        BlogPageFactory(title="Beta Alpha", parent=cls.home)
+        BlogPageFactory(title="Alpha Gamma", parent=cls.home)
+        BlogPageFactory(title="Beta", parent=cls.home)
+        BlogPageFactory(title="Alpha Alpha", parent=cls.home)
+        BlogPageFactory(title="Gamma Gamma", parent=cls.home)
+        BlogPageFactory(title="Beta Beta", parent=cls.home)
+        BlogPageFactory(title="Gamma", parent=cls.home)
+        BlogPageFactory(title="Beta Gamma", parent=cls.home)
+        BlogPageFactory(title="Gamma Alpha", parent=cls.home)
+
+    def test_natural_order(self):
+        query = """
+        query($searchQuery: String, $order: String) {
+            pages(searchQuery: $searchQuery, order: $order) {
+                title
+            }
+        }
+        """
+        """
+        sqlite doesn't support scoring so natural order will be in the order of defintion.
+        with another database or elasticsearch backend the order will be different
+        """
+        executed = self.client.execute(query, variables={"searchQuery": "Alpha"})
+        page_data = executed["data"].get("pages")
+        self.assertEqual(len(page_data), 6)
+        self.assertEqual(page_data[0]["title"], "Alpha")
+        self.assertEqual(page_data[1]["title"], "Alpha Beta")
+        self.assertEqual(page_data[2]["title"], "Beta Alpha")
+        self.assertEqual(page_data[3]["title"], "Alpha Gamma")
+        self.assertEqual(page_data[4]["title"], "Alpha Alpha")
+        self.assertEqual(page_data[5]["title"], "Gamma Alpha")
+
+    def test_explicit_order(self):
+        query = """
+        query($searchQuery: String, $order: String) {
+            pages(searchQuery: $searchQuery, order: $order) {
+                title
+            }
+        }
+        """
+        executed = self.client.execute(
+            query, variables={"searchQuery": "Gamma", "order": "-title"}
+        )
+        page_data = executed["data"].get("pages")
+
+        self.assertEqual(len(page_data), 6)
+        self.assertEqual(page_data[0]["title"], "Gamma Gamma")
+        self.assertEqual(page_data[1]["title"], "Gamma Beta")
+        self.assertEqual(page_data[2]["title"], "Gamma Alpha")
+        self.assertEqual(page_data[3]["title"], "Gamma")
+        self.assertEqual(page_data[4]["title"], "Beta Gamma")
+        self.assertEqual(page_data[5]["title"], "Alpha Gamma")
 
 
 class PageUrlPathTest(BaseGrappleTest):
@@ -203,19 +503,19 @@ class PageUrlPathTest(BaseGrappleTest):
         child = BlogPageFactory(slug="child", parent=parent)
 
         page_data = self._query_by_path("/parent/child/")
-        self.assertEquals(int(page_data["id"]), child.id)
+        self.assertEqual(int(page_data["id"]), child.id)
 
         # query without trailing slash
         page_data = self._query_by_path("/parent/child")
-        self.assertEquals(int(page_data["id"]), child.id)
+        self.assertEqual(int(page_data["id"]), child.id)
 
         # we have two pages with the same slug, however /home/child will
         # be returned first because of its position in the tree
         page_data = self._query_by_path("/child")
-        self.assertEquals(int(page_data["id"]), home_child.id)
+        self.assertEqual(int(page_data["id"]), home_child.id)
 
         page_data = self._query_by_path("/")
-        self.assertEquals(int(page_data["id"]), self.home.id)
+        self.assertEqual(int(page_data["id"]), self.home.id)
 
         page_data = self._query_by_path("foo/bar")
         self.assertIsNone(page_data)
@@ -233,17 +533,17 @@ class PageUrlPathTest(BaseGrappleTest):
 
         # with multiple sites, only the first one will be returned
         page_data = self._query_by_path("/child/")
-        self.assertEquals(int(page_data["id"]), home_child.id)
+        self.assertEqual(int(page_data["id"]), home_child.id)
 
         with patch(
-            f"{settings.WAGTAIL_CORE}.models.Site.find_for_request",
+            "wagtail.models.Site.find_for_request",
             return_value=another_site,
         ):
             page_data = self._query_by_path("/child/", in_site=True)
-            self.assertEquals(int(page_data["id"]), another_child.id)
+            self.assertEqual(int(page_data["id"]), another_child.id)
 
             page_data = self._query_by_path("/child", in_site=True)
-            self.assertEquals(int(page_data["id"]), another_child.id)
+            self.assertEqual(int(page_data["id"]), another_child.id)
 
 
 class SitesTest(TestCase):
@@ -251,6 +551,18 @@ class SitesTest(TestCase):
         self.site = wagtail_factories.SiteFactory(
             hostname="grapple.localhost", site_name="Grapple test site"
         )
+
+        self.site_different_hostname = wagtail_factories.SiteFactory(
+            hostname="different-hostname.localhost",
+            site_name="Grapple test site (different hostname)",
+        )
+
+        self.site_different_hostname_different_port = wagtail_factories.SiteFactory(
+            hostname="different-hostname.localhost",
+            port=8000,
+            site_name="Grapple test site (different hostname/port)",
+        )
+
         self.client = Client(SCHEMA)
         self.home = HomePage.objects.first()
 
@@ -274,9 +586,9 @@ class SitesTest(TestCase):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(type(executed["data"]), dict_type)
-        self.assertEquals(type(executed["data"]["sites"]), list)
-        self.assertEquals(len(executed["data"]["sites"]), Site.objects.count())
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["sites"]), list)
+        self.assertEqual(len(executed["data"]["sites"]), Site.objects.count())
 
     def test_site(self):
         query = """
@@ -294,15 +606,66 @@ class SitesTest(TestCase):
             query, variables={"hostname": self.site.hostname}
         )
 
-        self.assertEquals(type(executed["data"]), dict_type)
-        self.assertEquals(type(executed["data"]["site"]), dict_type)
-        self.assertEquals(type(executed["data"]["site"]["pages"]), list)
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["site"]), dict)
+        self.assertEqual(type(executed["data"]["site"]["pages"]), list)
+
+        self.assertEqual(executed["data"]["site"]["siteName"], "Grapple test site")
 
         pages = Page.objects.in_site(self.site)
 
-        self.assertEquals(len(executed["data"]["site"]["pages"]), pages.count())
+        self.assertEqual(len(executed["data"]["site"]["pages"]), pages.count())
         self.assertNotEqual(
             len(executed["data"]["site"]["pages"]), Page.objects.count()
+        )
+
+    def test_site_errors_when_multiple_sites_match_hostname_and_port_unspecified(self):
+        query = """
+        query($hostname: String) {
+            site(hostname: $hostname) {
+                siteName
+            }
+        }
+        """
+
+        executed = self.client.execute(
+            query, variables={"hostname": self.site_different_hostname.hostname}
+        )
+
+        self.assertEqual(
+            executed,
+            {
+                "errors": [
+                    {
+                        "message": "Your 'hostname' filter value of "
+                        "'different-hostname.localhost' returned multiple "
+                        "sites. Try adding a port number (for example: "
+                        "'different-hostname.localhost:80').",
+                        "locations": [{"line": 3, "column": 13}],
+                        "path": ["site"],
+                    }
+                ],
+                "data": {"site": None},
+            },
+        )
+
+    def test_site_with_different_port(self):
+        query = """
+        query($hostname: String) {
+            site(hostname: $hostname) {
+                siteName
+            }
+        }
+        """
+
+        executed = self.client.execute(
+            query,
+            variables={"hostname": self.site_different_hostname.hostname + ":8000"},
+        )
+
+        self.assertEqual(
+            executed["data"]["site"]["siteName"],
+            "Grapple test site (different hostname/port)",
         )
 
     def test_site_pages_content_type_filter(self):
@@ -326,8 +689,8 @@ class SitesTest(TestCase):
             },
         )
         data = results["data"]["site"]["pages"]
-        self.assertEquals(len(data), 1)
-        self.assertEquals(data[0]["title"], self.site.root_page.title)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["title"], self.site.root_page.title)
 
         # Shouldn't return any data
         results = self.client.execute(
@@ -335,7 +698,7 @@ class SitesTest(TestCase):
             variables={"hostname": self.site.hostname, "content_type": "home.HomePage"},
         )
         data = results["data"]["site"]["pages"]
-        self.assertEquals(len(data), 0)
+        self.assertEqual(len(data), 0)
 
         # localhost root page
         results = self.client.execute(
@@ -346,9 +709,9 @@ class SitesTest(TestCase):
             },
         )
         data = results["data"]["site"]["pages"]
-        self.assertEquals(len(data), 1)
-        self.assertEquals(data[0]["contentType"], "home.HomePage")
-        self.assertEquals(data[0]["title"], self.home.title)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["contentType"], "home.HomePage")
+        self.assertEqual(data[0]["title"], self.home.title)
 
         # Blog page under grapple test site
         blog = BlogPageFactory(
@@ -359,9 +722,9 @@ class SitesTest(TestCase):
             variables={"hostname": self.site.hostname, "content_type": "home.BlogPage"},
         )
         data = results["data"]["site"]["pages"]
-        self.assertEquals(len(data), 1)
-        self.assertEquals(data[0]["contentType"], "home.BlogPage")
-        self.assertEquals(data[0]["title"], blog.title)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["contentType"], "home.BlogPage")
+        self.assertEqual(data[0]["title"], blog.title)
 
         # Blog page under localhost
         blog = BlogPageFactory(parent=self.home, title="blog on localhost")
@@ -373,9 +736,159 @@ class SitesTest(TestCase):
             },
         )
         data = results["data"]["site"]["pages"]
-        self.assertEquals(len(data), 1)
-        self.assertEquals(data[0]["contentType"], "home.BlogPage")
-        self.assertEquals(data[0]["title"], blog.title)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["contentType"], "home.BlogPage")
+        self.assertEqual(data[0]["title"], blog.title)
+
+    def test_site_page_slug_filter(self):
+        query = """
+        query($hostname: String $slug: String) {
+            site(hostname: $hostname) {
+                siteName
+                page(slug: $slug) {
+                    title
+                }
+            }
+        }
+        """
+        # Blog page under grapple test site
+        blog = BlogPageFactory(
+            parent=self.site.root_page,
+            title="blog on grapple test site",
+            slug="blog-page-1",
+        )
+        # grapple test SiteObjectType page field
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.site.hostname,
+                "slug": blog.slug,
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNotNone(data)
+        self.assertEqual(data["title"], blog.title)
+        # Shouldn't return any data
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.site.hostname,
+                "slug": "not-a-page-slug",
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNone(data)
+
+        # Blog page under localhost
+        blog = BlogPageFactory(
+            parent=self.home, title="blog on localhost", slug="blog-page-2"
+        )
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.home.get_site().hostname,
+                "slug": blog.slug,
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNotNone(data)
+        self.assertEqual(data["title"], blog.title)
+
+    def test_site_page_url_path_filter(self):
+        # These additional sites prevent the .relative_url() call below from returning a relative URL
+        # They're not needed for this particular test
+        self.site_different_hostname.delete()
+        self.site_different_hostname_different_port.delete()
+
+        query = """
+        query($hostname: String $urlPath: String) {
+            site(hostname: $hostname) {
+                siteName
+                page(urlPath: $urlPath) {
+                    title
+                }
+            }
+        }
+        """
+        # Blog page under grapple test site
+        blog = BlogPageFactory(
+            parent=self.site.root_page,
+            title="blog on grapple test site",
+            slug="blog-page-1",
+        )
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.site.hostname,
+                "urlPath": blog.relative_url(current_site=self.site),
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNotNone(data)
+        self.assertEqual(data["title"], blog.title)
+        # Shouldn't return any data
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.site.hostname,
+                "urlPath": "/not-a-page-slug",
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNone(data)
+
+        # Blog page under localhost
+        blog = BlogPageFactory(
+            parent=self.home, title="blog on localhost", slug="blog-page-2"
+        )
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.home.get_site().hostname,
+                "urlPath": blog.relative_url(current_site=self.home.get_site()),
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNotNone(data)
+        self.assertEqual(data["title"], blog.title)
+
+    def test_site_page_content_type_filter(self):
+        query = """
+        query($hostname: String $slug: String $content_type: String) {
+            site(hostname: $hostname) {
+                siteName
+                page(slug: $slug, contentType: $content_type) {
+                    title
+                }
+            }
+        }
+        """
+        # Blog page under grapple test site
+        blog = BlogPageFactory(
+            parent=self.site.root_page, title="blog on grapple test site"
+        )
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.site.hostname,
+                "slug": blog.slug,
+                "content_type": "home.BlogPage",
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNotNone(data)
+        self.assertEqual(data["title"], blog.title)
+        # Shouldn't return any data
+        results = self.client.execute(
+            query,
+            variables={
+                "hostname": self.site.hostname,
+                "slug": blog.slug,
+                "content_type": "home.HomePage",
+            },
+        )
+        data = results["data"]["site"]["page"]
+        self.assertIsNone(data)
 
 
 @override_settings(GRAPPLE={"AUTO_CAMELCASE": False})
@@ -395,17 +908,17 @@ class DisableAutoCamelCaseTest(TestCase):
         """
         executed = self.client.execute(query)
 
-        self.assertEquals(type(executed["data"]), dict_type)
-        self.assertEquals(type(executed["data"]["pages"]), list)
-        self.assertEquals(type(executed["data"]["pages"][0]), dict_type)
-        self.assertEquals(type(executed["data"]["pages"][0]["title"]), str)
-        self.assertEquals(type(executed["data"]["pages"][0]["url_path"]), str)
+        self.assertEqual(type(executed["data"]), dict)
+        self.assertEqual(type(executed["data"]["pages"]), list)
+        self.assertEqual(type(executed["data"]["pages"][0]), dict)
+        self.assertEqual(type(executed["data"]["pages"][0]["title"]), str)
+        self.assertEqual(type(executed["data"]["pages"][0]["url_path"]), str)
 
         # note: not using .all() as the pages query returns all pages with a depth > 1. Wagtail will normally have
         # only one page at depth 1 (RootPage). everything else lives under it.
         pages = Page.objects.filter(depth__gt=1)
 
-        self.assertEquals(len(executed["data"]["pages"]), pages.count())
+        self.assertEqual(len(executed["data"]["pages"]), pages.count())
 
 
 class ImagesTest(BaseGrappleTest):
@@ -437,12 +950,12 @@ class ImagesTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(executed["data"]["images"][0]["id"], "1")
-        self.assertEquals(
+        self.assertEqual(executed["data"]["images"][0]["id"], "1")
+        self.assertEqual(
             executed["data"]["images"][0]["url"],
             "http://localhost:8000" + self.example_image.file.url,
         )
-        self.assertEquals(
+        self.assertEqual(
             executed["data"]["images"][0]["url"], executed["data"]["images"][0]["src"]
         )
 
@@ -460,8 +973,8 @@ class ImagesTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(executed["data"]["images"][0]["id"], "1")
-        self.assertEquals(
+        self.assertEqual(executed["data"]["images"][0]["id"], "1")
+        self.assertEqual(
             executed["data"]["images"][0]["rendition"]["url"],
             "http://localhost:8000"
             + self.example_image.get_rendition("width-200").file.url,
@@ -521,6 +1034,54 @@ class ImagesTest(BaseGrappleTest):
         self.assertNotIn("width-100", executed["data"]["image"]["srcSet"])
         self.assertIn("width-200", executed["data"]["image"]["srcSet"])
 
+    def test_src_set_with_format(self):
+        query = """
+        {
+            image(id: 1) {
+                srcSet(sizes: [100, 300], format: "webp")
+            }
+        }
+        """
+        executed = self.client.execute(query)
+        self.assertIn("width-100.format-webp.webp", executed["data"]["image"]["srcSet"])
+        self.assertIn("width-300.format-webp.webp", executed["data"]["image"]["srcSet"])
+
+    def test_src_set_invalid_format(self):
+        query = """
+        {
+            image(id: 1) {
+                srcSet(sizes: [100, 300], format: "foobar")
+            }
+        }
+        """
+        executed = self.client.execute(query)
+        self.assertEqual(len(executed["errors"]), 1)
+        self.assertIn("Format must be either 'jpeg'", executed["errors"][0]["message"])
+
+    @override_settings(GRAPPLE={"ALLOWED_IMAGE_FILTERS": ["width-200"]})
+    def test_src_set_disallowed_filter(self):
+        query = """
+        {
+            image(id: 1) {
+                srcSet(sizes: [200], format: "webp")
+            }
+        }
+        """
+        executed = self.client.execute(query)
+        self.assertEqual("", executed["data"]["image"]["srcSet"])
+
+    @override_settings(GRAPPLE={"ALLOWED_IMAGE_FILTERS": ["width-200|format-webp"]})
+    def test_src_set_allowed_filter(self):
+        query = """
+        {
+            image(id: 1) {
+                srcSet(sizes: [200], format: "webp")
+            }
+        }
+        """
+        executed = self.client.execute(query)
+        self.assertIn("width-200.format-webp.webp", executed["data"]["image"]["srcSet"])
+
     def test_rendition_allowed_method(self):
         self.assertTrue(rendition_allowed("width-100"))
         with override_settings(GRAPPLE={"ALLOWED_IMAGE_FILTERS": ["width-200"]}):
@@ -530,6 +1091,30 @@ class ImagesTest(BaseGrappleTest):
         with override_settings(GRAPPLE={"ALLOWED_IMAGE_FILTERS": []}):
             self.assertFalse(rendition_allowed("width-100"))
             self.assertFalse(rendition_allowed("fill-100x100"))
+
+    def test_src_set_num_queries(self):
+        sizes = [360, 720, 1024]
+        filters = [f"width-{size}" for size in sizes]
+
+        def get_renditions(image):
+            for img_filter in filters:
+                image.get_rendition(img_filter)
+
+        # Generate renditions for each filter in the filters list for all images
+        get_renditions(self.example_image)
+        for i in range(4):
+            get_renditions(wagtail_factories.ImageFactory(title=f"Image {i}"))
+
+        query = """
+        {
+            images {
+                srcSet(sizes: [360, 720, 1024])
+            }
+        }
+        """
+
+        with self.assertNumQueries(2):
+            self.client.execute(query)
 
     def tearDown(self):
         example_image_path = self.example_image.file.path
@@ -558,10 +1143,9 @@ class DocumentsTest(BaseGrappleTest):
 
         self.assertEqual(example_doc.id, 1)
         self.assertEqual(example_doc.title, "Example File")
-
-        example_doc.file.seek(0)
-
-        self.assertEqual(example_doc.file.readline(), b"Hello world!")
+        with example_doc.open_file() as file:
+            file.seek(0)
+            self.assertEqual(file.readline(), b"Hello world!")
 
         self.assertNotEqual(example_doc.file_hash, "")
         self.assertNotEqual(example_doc.file_size, None)
@@ -580,11 +1164,11 @@ class DocumentsTest(BaseGrappleTest):
 
         documents = self.document_model.objects.all()
 
-        self.assertEquals(len(executed["data"]["documents"]), documents.count())
-        self.assertEquals(
+        self.assertEqual(len(executed["data"]["documents"]), documents.count())
+        self.assertEqual(
             executed["data"]["documents"][0]["id"], str(self.example_document.id)
         )
-        self.assertEquals(
+        self.assertEqual(
             executed["data"]["documents"][0]["customDocumentProperty"],
             "Document Model!",
         )
@@ -601,7 +1185,7 @@ class DocumentsTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(
+        self.assertEqual(
             executed["data"]["documents"][0]["file"], self.example_document.file.name
         )
 
@@ -617,7 +1201,7 @@ class DocumentsTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(
+        self.assertEqual(
             executed["data"]["documents"][0]["fileHash"],
             self.example_document.file_hash,
         )
@@ -634,7 +1218,7 @@ class DocumentsTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(
+        self.assertEqual(
             executed["data"]["documents"][0]["fileSize"],
             self.example_document.file_size,
         )
@@ -714,8 +1298,8 @@ class MediaTest(BaseGrappleTest):
 
         media = self.media_model.objects.all()
 
-        self.assertEquals(len(executed["data"]["media"]), media.count())
-        self.assertEquals(executed["data"]["media"][0]["id"], str(self.media_item.id))
+        self.assertEqual(len(executed["data"]["media"]), media.count())
+        self.assertEqual(executed["data"]["media"][0]["id"], str(self.media_item.id))
 
     def test_query_file_field(self):
         query = """
@@ -729,9 +1313,308 @@ class MediaTest(BaseGrappleTest):
 
         executed = self.client.execute(query)
 
-        self.assertEquals(
+        self.assertEqual(
             executed["data"]["media"][0]["file"], self.media_item.file.name
         )
 
     def tearDown(self):
         self.media_item.file.delete()
+
+
+class SettingsTest(BaseGrappleTest):
+    def setUp(self):
+        super().setUp()
+
+        self.site_a = Site.objects.get()
+        self.site_a.hostname = "a"
+        self.site_a.save()
+
+        self.site_b = Site.objects.create(
+            hostname="b", port=80, root_page_id=self.site_a.root_page_id
+        )
+
+        self.site_a_settings = SocialMediaSettings.objects.create(
+            site=self.site_a,
+            facebook="https://facebook.com/site-a",
+            instagram="site-a",
+            trip_advisor="https://tripadvisor.com/site-a",
+            youtube="https://youtube.com/site-a",
+        )
+
+        self.site_b_settings = SocialMediaSettings.objects.create(
+            site=self.site_b,
+            facebook="https://facebook.com/site-b",
+            instagram="site-b",
+            trip_advisor="https://tripadvisor.com/site-b",
+            youtube="https://youtube.com/site-b",
+        )
+
+        self.global_settings = GlobalSocialMediaSettings.objects.create(
+            facebook="https://facebook.com/global",
+            instagram="global",
+            trip_advisor="https://tripadvisor.com/global",
+            youtube="https://youtube.com/global",
+        )
+
+    def test_query_single_setting(self):
+        query = """
+        {
+            setting(name: "SocialMediaSettings") {
+                ... on SocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+            }
+        }
+        """
+
+        response = self.client.execute(query)
+
+        self.assertEqual(
+            response,
+            {
+                "data": {
+                    "setting": {
+                        "facebook": "https://facebook.com/site-a",
+                        "instagram": "site-a",
+                        "tripAdvisor": "https://tripadvisor.com/site-a",
+                        "youtube": "https://youtube.com/site-a",
+                    }
+                }
+            },
+        )
+
+    def test_query_single_setting_with_site_filter(self):
+        query = """
+        {
+            setting(site: "b", name: "SocialMediaSettings") {
+                ... on SocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+            }
+        }
+        """
+
+        response = self.client.execute(query)
+
+        self.assertEqual(
+            response,
+            {
+                "data": {
+                    "setting": {
+                        "facebook": "https://facebook.com/site-b",
+                        "instagram": "site-b",
+                        "tripAdvisor": "https://tripadvisor.com/site-b",
+                        "youtube": "https://youtube.com/site-b",
+                    }
+                }
+            },
+        )
+
+    def test_query_single_setting_with_site_filter_clashing_port(self):
+        # Create another site with the hostname "b" but a different port
+        self.site_b_8080 = Site.objects.create(
+            hostname="b", port=8080, root_page_id=self.site_a.root_page_id
+        )
+
+        query = """
+        {
+            setting(site: "b", name: "SocialMediaSettings") {
+                ... on SocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+            }
+        }
+        """
+
+        response = self.client.execute(query)
+
+        self.assertEqual(
+            response,
+            {
+                "errors": [
+                    {
+                        "message": "Your 'site' filter value of 'b' returned multiple sites. Try adding a port number (for example: 'b:80').",
+                        "locations": [{"line": 3, "column": 13}],
+                        "path": ["setting"],
+                    }
+                ],
+                "data": {"setting": None},
+            },
+        )
+
+    def test_query_single_setting_with_site_filter_with_port(self):
+        # Create another site with the hostname "b" but a different port
+        self.site_b_8080 = Site.objects.create(
+            hostname="b", port=8080, root_page_id=self.site_a.root_page_id
+        )
+
+        query = """
+        {
+            setting(site: "b:80", name: "SocialMediaSettings") {
+                ... on SocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+            }
+        }
+        """
+
+        response = self.client.execute(query)
+
+        self.assertEqual(
+            response,
+            {
+                "data": {
+                    "setting": {
+                        "facebook": "https://facebook.com/site-b",
+                        "instagram": "site-b",
+                        "tripAdvisor": "https://tripadvisor.com/site-b",
+                        "youtube": "https://youtube.com/site-b",
+                    }
+                }
+            },
+        )
+
+    def test_query_site_settings(self):
+        query = """
+        {
+            settings(name: "SocialMediaSettings") {
+                ... on SocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+            }
+        }
+        """
+
+        response = self.client.execute(query)
+
+        self.assertEqual(
+            response,
+            {
+                "data": {
+                    "settings": [
+                        {
+                            "facebook": "https://facebook.com/site-a",
+                            "instagram": "site-a",
+                            "tripAdvisor": "https://tripadvisor.com/site-a",
+                            "youtube": "https://youtube.com/site-a",
+                        },
+                        {
+                            "facebook": "https://facebook.com/site-b",
+                            "instagram": "site-b",
+                            "tripAdvisor": "https://tripadvisor.com/site-b",
+                            "youtube": "https://youtube.com/site-b",
+                        },
+                    ]
+                }
+            },
+        )
+
+    def test_query_all_settings(self):
+        query = """
+        {
+            settings {
+                ... on SocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+                ... on GlobalSocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+            }
+        }
+        """
+
+        response = self.client.execute(query)
+
+        self.assertEqual(
+            response,
+            {
+                "data": {
+                    "settings": [
+                        {
+                            "facebook": "https://facebook.com/site-a",
+                            "instagram": "site-a",
+                            "tripAdvisor": "https://tripadvisor.com/site-a",
+                            "youtube": "https://youtube.com/site-a",
+                        },
+                        {
+                            "facebook": "https://facebook.com/site-b",
+                            "instagram": "site-b",
+                            "tripAdvisor": "https://tripadvisor.com/site-b",
+                            "youtube": "https://youtube.com/site-b",
+                        },
+                        {
+                            "facebook": "https://facebook.com/global",
+                            "instagram": "global",
+                            "tripAdvisor": "https://tripadvisor.com/global",
+                            "youtube": "https://youtube.com/global",
+                        },
+                    ]
+                }
+            },
+        )
+
+    def test_query_all_settings_with_site_filter(self):
+        query = """
+        {
+            settings(site: "b") {
+                ... on SocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+                ... on GlobalSocialMediaSettings {
+                    facebook
+                    instagram
+                    tripAdvisor
+                    youtube
+                }
+            }
+        }
+        """
+
+        response = self.client.execute(query)
+
+        # Should return site-specific settings for site b and global settings
+        self.assertEqual(
+            response,
+            {
+                "data": {
+                    "settings": [
+                        {
+                            "facebook": "https://facebook.com/site-b",
+                            "instagram": "site-b",
+                            "tripAdvisor": "https://tripadvisor.com/site-b",
+                            "youtube": "https://youtube.com/site-b",
+                        },
+                        {
+                            "facebook": "https://facebook.com/global",
+                            "instagram": "global",
+                            "tripAdvisor": "https://tripadvisor.com/global",
+                            "youtube": "https://youtube.com/global",
+                        },
+                    ]
+                }
+            },
+        )

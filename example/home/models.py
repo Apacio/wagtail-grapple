@@ -1,23 +1,19 @@
 import graphene
 from django.conf import settings
 from django.db import models
+from django.utils.functional import cached_property
 from home.blocks import StreamFieldBlock
 from modelcluster.contrib.taggit import ClusterTaggableManager
 from modelcluster.fields import ParentalKey
 from taggit.models import TaggedItemBase
-
-try:
-    from wagtail.admin.panels import FieldPanel, InlinePanel
-    from wagtail.fields import StreamField
-    from wagtail.models import Orderable, Page
-except ImportError:
-    from wagtail.admin.edit_handlers import FieldPanel, InlinePanel, StreamFieldPanel
-    from wagtail.core.fields import StreamField
-    from wagtail.core.models import Orderable, Page
-from wagtail.contrib.settings.models import BaseSetting, register_setting
-from wagtail.documents.edit_handlers import DocumentChooserPanel
-from wagtail.images.edit_handlers import ImageChooserPanel
-from wagtail.snippets.edit_handlers import SnippetChooserPanel
+from wagtail.admin.panels import FieldPanel, InlinePanel
+from wagtail.contrib.settings.models import (
+    BaseGenericSetting,
+    BaseSiteSetting,
+    register_setting,
+)
+from wagtail.fields import RichTextField, StreamField
+from wagtail.models import Orderable, Page
 from wagtail.snippets.models import register_snippet
 from wagtail_headless_preview.models import HeadlessPreviewMixin
 from wagtailmedia.edit_handlers import MediaChooserPanel
@@ -31,10 +27,12 @@ from grapple.middleware import IsAnonymousMiddleware
 from grapple.models import (
     GraphQLCollection,
     GraphQLDocument,
+    GraphQLField,
     GraphQLForeignKey,
     GraphQLImage,
     GraphQLMedia,
     GraphQLPage,
+    GraphQLRichText,
     GraphQLSnippet,
     GraphQLStreamfield,
     GraphQLString,
@@ -77,7 +75,9 @@ class BlogPageTag(TaggedItemBase):
 
 @register_singular_query_field("first_post", middleware=[IsAnonymousMiddleware])
 @register_paginated_query_field("blog_page", middleware=[IsAnonymousMiddleware])
-@register_query_field("post", middleware=[IsAnonymousMiddleware])
+@register_query_field(
+    "post", middleware=[IsAnonymousMiddleware()]
+)  # instantiated on purpose
 class BlogPage(HeadlessPreviewMixin, Page):
     date = models.DateField("Post date")
     advert = models.ForeignKey(
@@ -111,19 +111,22 @@ class BlogPage(HeadlessPreviewMixin, Page):
     author = models.ForeignKey(
         AuthorPage, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    body = StreamField(StreamFieldBlock())
+    summary = RichTextField(blank=True)
+    extra_summary = RichTextField(blank=True)
+    body = StreamField(StreamFieldBlock(), use_json_field=True)
     tags = ClusterTaggableManager(through=BlogPageTag, blank=True)
 
     content_panels = Page.content_panels + [
         FieldPanel("date"),
-        ImageChooserPanel("hero_image"),
-        StreamFieldPanel("body"),
+        FieldPanel("hero_image"),
+        FieldPanel("summary"),
+        FieldPanel("body"),
         FieldPanel("tags"),
         InlinePanel("related_links", label="Related links"),
         InlinePanel("authors", label="Authors"),
         FieldPanel("author"),
-        SnippetChooserPanel("advert"),
-        DocumentChooserPanel("book_file"),
+        FieldPanel("advert"),
+        FieldPanel("book_file"),
         MediaChooserPanel("featured_media"),
     ]
 
@@ -134,8 +137,23 @@ class BlogPage(HeadlessPreviewMixin, Page):
     def paginated_authors(self, info, **kwargs):
         return resolve_paginated_queryset(self.authors, info, **kwargs)
 
+    @cached_property
+    def custom_property(self):
+        return {
+            "path": self.url,
+            "author": self.author.name if self.author else "Unknown",
+        }
+
     graphql_fields = [
         GraphQLString("date", required=True),
+        GraphQLRichText("summary"),
+        GraphQLString("string_summary", source="summary"),
+        GraphQLString("extra_summary"),
+        GraphQLField(
+            field_name="custom_property",
+            field_type=graphene.JSONString,
+            required=False,
+        ),
         GraphQLStreamfield("body"),
         GraphQLTag("tags"),
         GraphQLCollection(
@@ -192,34 +210,48 @@ class Author(Orderable):
         Person, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
 
-    panels = [FieldPanel("role"), SnippetChooserPanel("person")]
+    panels = [FieldPanel("role"), FieldPanel("person")]
 
     graphql_fields = [GraphQLString("role"), GraphQLForeignKey("person", Person)]
+
+
+def custom_middleware(next, root, info, **kwargs):
+    info.context.custom_middleware = True
+    return next(root, info, **kwargs)
 
 
 @register_snippet
 @register_query_field(
     "advert",
     "adverts",
-    {"url": graphene.String()},
+    query_params={"url": graphene.String()},
     required=True,
     plural_required=True,
     plural_item_required=True,
+    middleware=[custom_middleware],
 )
 class Advert(models.Model):
     url = models.URLField(null=True, blank=True)
     text = models.CharField(max_length=255)
+    rich_text = RichTextField(blank=True, default="")
+    extra_rich_text = RichTextField(blank=True, default="")
 
-    panels = [FieldPanel("url"), FieldPanel("text")]
+    panels = [FieldPanel("url"), FieldPanel("text"), FieldPanel("rich_text")]
 
-    graphql_fields = [GraphQLString("url"), GraphQLString("text")]
+    graphql_fields = [
+        GraphQLString("url"),
+        GraphQLString("text"),
+        GraphQLRichText("rich_text"),
+        GraphQLString("string_rich_text", source="rich_text"),
+        GraphQLString("extra_rich_text"),
+    ]
 
     def __str__(self):
         return self.text
 
 
 @register_setting
-class SocialMediaSettings(BaseSetting):
+class SocialMediaSettings(BaseSiteSetting):
     facebook = models.URLField(help_text="Your Facebook page URL")
     instagram = models.CharField(
         max_length=255, help_text="Your Instagram username, without the @"
@@ -233,3 +265,22 @@ class SocialMediaSettings(BaseSetting):
         GraphQLString("trip_advisor"),
         GraphQLString("youtube"),
     ]
+
+
+class GlobalSocialMediaSettings(BaseGenericSetting):
+    facebook = models.URLField(help_text="Your Facebook page URL")
+    instagram = models.CharField(
+        max_length=255, help_text="Your Instagram username, without the @"
+    )
+    trip_advisor = models.URLField(help_text="Your Trip Advisor page URL")
+    youtube = models.URLField(help_text="Your YouTube channel or user account URL")
+
+    graphql_fields = [
+        GraphQLString("facebook"),
+        GraphQLString("instagram"),
+        GraphQLString("trip_advisor"),
+        GraphQLString("youtube"),
+    ]
+
+
+register_setting(GlobalSocialMediaSettings)

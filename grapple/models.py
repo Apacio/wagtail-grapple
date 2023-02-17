@@ -103,6 +103,15 @@ def GraphQLStreamfield(field_name: str, **kwargs):
     return Mixin
 
 
+def GraphQLRichText(field_name: str, **kwargs):
+    def Mixin():
+        from .types.rich_text import RichText
+
+        return GraphQLField(field_name, RichText, **kwargs)
+
+    return Mixin
+
+
 def GraphQLImage(field_name: str, **kwargs):
     def Mixin():
         from .types.images import get_image_type
@@ -117,15 +126,6 @@ def GraphQLDocument(field_name: str, **kwargs):
         from .types.documents import get_document_type
 
         return GraphQLField(field_name, get_document_type, **kwargs)
-
-    return Mixin
-
-
-def GraphQLMedia(field_name: str, **kwargs):
-    def Mixin():
-        from .types.media import get_media_type
-
-        return GraphQLField(field_name, get_media_type, **kwargs)
 
     return Mixin
 
@@ -211,3 +211,14 @@ def GraphQLTag(field_name: str, **kwargs):
         return GraphQLField(field_name, TagObjectType, **kwargs)
 
     return Mixin
+
+
+if apps.is_installed("wagtailmedia"):
+
+    def GraphQLMedia(field_name: str, **kwargs):
+        def Mixin():
+            from .types.media import get_media_type
+
+            return GraphQLField(field_name, get_media_type, **kwargs)
+
+        return Mixin

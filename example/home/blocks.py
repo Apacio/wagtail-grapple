@@ -2,9 +2,10 @@ from typing import Any, Dict, Optional
 
 import graphene
 from django.utils.text import slugify
-from wagtail.core import blocks
+from wagtail import blocks
 from wagtail.embeds.blocks import EmbedBlock
 from wagtail.images.blocks import ImageChooserBlock
+from wagtail.snippets.blocks import SnippetChooserBlock
 
 from grapple.helpers import register_streamfield_block
 from grapple.models import (
@@ -16,6 +17,7 @@ from grapple.models import (
     GraphQLForeignKey,
     GraphQLImage,
     GraphQLInt,
+    GraphQLRichText,
     GraphQLStreamfield,
     GraphQLString,
 )
@@ -70,7 +72,7 @@ class CalloutBlock(blocks.StructBlock):
     text = blocks.RichTextBlock()
     image = ImageChooserBlock()
 
-    graphql_fields = [GraphQLString("text"), GraphQLImage("image")]
+    graphql_fields = [GraphQLRichText("text"), GraphQLImage("image")]
 
 
 @register_streamfield_block
@@ -94,6 +96,21 @@ class TextAndButtonsBlock(blocks.StructBlock):
         GraphQLStreamfield(
             "mainbutton", is_list=False
         ),  # this is a direct StructBlock, not a list of sub-blocks
+    ]
+
+
+@register_streamfield_block
+class BlockWithName(blocks.StructBlock):
+    """
+    wagtail.blocks.Block defines a name property inherited by all blocks.
+    Ensure that when we bind a block to "name" that the block's value is
+    returned in GraphQL queries.
+    """
+
+    name = blocks.TextBlock()
+
+    graphql_fields = [
+        GraphQLString("name"),
     ]
 
 
@@ -235,3 +252,6 @@ class StreamFieldBlock(blocks.StreamBlock):
     text_and_buttons = TextAndButtonsBlock()
     page = blocks.PageChooserBlock()
     text_with_callable = TextWithCallableBlock()
+    block_with_name = BlockWithName()
+    advert = SnippetChooserBlock("home.Advert")
+    person = SnippetChooserBlock("home.Person")

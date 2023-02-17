@@ -1,21 +1,21 @@
 <p align="center">
-  <a href="https://github.com/GrappleGQL/wagtail-grapple">
-    <img src="https://github.com/GrappleGQL/wagtail-grapple/raw/main/.github/wagtail-grapple.svg?sanitize=true" alt="A red g with a grapple hook" width="80" height="80">
+  <a href="https://github.com/torchbox/wagtail-grapple">
+    <img src="https://github.com/torchbox/wagtail-grapple/raw/main/.github/wagtail-grapple.svg?sanitize=true" alt="A red g with a grapple hook" width="80" height="80">
   </a>
 </p>
 
 # Wagtail Grapple
 
-[![Build status](https://github.com/GrappleGQL/wagtail-grapple/actions/workflows/ci.yml/badge.svg)](https://github.com/GrappleGQL/wagtail-grapple/actions)
+[![Build status](https://github.com/torchbox/wagtail-grapple/actions/workflows/ci.yml/badge.svg)](https://github.com/torchbox/wagtail-grapple/actions)
 [![PyPi](https://img.shields.io/pypi/v/wagtail-grapple.svg)](https://pypi.org/project/wagtail-grapple/)
 [![black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/torchbox/wagtail-grapple/main.svg)](https://results.pre-commit.ci/latest/github/torchbox/wagtail-grapple/main)
 
 A library to build GraphQL endpoints easily so you can grapple your Wagtail data from anywhere!
 
 [Explore the docs »](https://wagtail-grapple.readthedocs.io/en/latest/) ·
-[Report Bug](https://github.com/GrappleGQL/wagtail-grapple/issues) ·
-[Request Feature](https://github.com/GrappleGQL/wagtail-grapple/issues)
+[Report Bug](https://github.com/torchbox/wagtail-grapple/issues) ·
+[Request Feature](https://github.com/torchbox/wagtail-grapple/issues)
 
 ## About The Project
 
@@ -65,8 +65,8 @@ Getting Grapple installed is designed to be as simple as possible!
 ### Prerequisites
 
 ```
-Django  >= 3.0, <4.0
-Wagtail >= 2.14, <2.17
+Python>=3.8,<3.12
+Wagtail >= 4.1
 ```
 
 ### Installation
@@ -164,19 +164,20 @@ _For more examples, please refer to the [Documentation](https://wagtail-grapple.
 
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to be learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are what make the open source community such an amazing place to learn, inspire, and create.
+Any contributions [you make](https://github.com/torchbox/wagtail-grapple/graphs/contributors) are **greatly appreciated**.
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/amazing-feature`)
-3. Commit your Changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the Branch (`git push origin feature/amazing-feature`)
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
 ### Local development
 
--   In the python environment of your choice, navigate to `/example`
+-   In the Python environment of your choice, navigate to `/example`
 -   Run `pip install -r requirements.txt`
--   Delete the `db.sqlite3` file and run `./manage.py migrate`
+-   Run `./manage.py migrate`
 -   Run server `./manage.py runserver`
 -   Run tests `./manage.py test`
 
@@ -184,9 +185,8 @@ Contributions are what make the open source community such an amazing place to b
 
 Wagtail Grapple supports:
 
--   Django >= 3.0, < 4.0
--   Python 3.7, 3.8, 3.9, and 3.10
--   Wagtail >= 2.14, < 2.17
+-   Python 3.8, 3.9, 3.10 and 3.11
+-   Wagtail >= 4.1
 
 ## License
 
@@ -198,32 +198,3 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 -   [@tr11](https://github.com/tr11)
 -   [@tmkn](https://github.com/tmkn)
-
-## Contributors ✨
-
-Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
-
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<table>
-  <tr>
-    <td align="center"><a href="https://github.com/NathHorrigan"><img src="https://avatars3.githubusercontent.com/u/13197111?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Nathan Horrigan</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=NathHorrigan" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/issues?q=author%3ANathHorrigan" title="Bug reports">🐛</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=NathHorrigan" title="Documentation">📖</a> <a href="#infra-NathHorrigan" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="#maintenance-NathHorrigan" title="Maintenance">🚧</a></td>
-    <td align="center"><a href="https://github.com/jafacakes2011"><img src="https://avatars3.githubusercontent.com/u/4086447?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Cameron Lamb</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=jafacakes2011" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/issues?q=author%3Ajafacakes2011" title="Bug reports">🐛</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=jafacakes2011" title="Documentation">📖</a> <a href="#infra-jafacakes2011" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="#maintenance-jafacakes2011" title="Maintenance">🚧</a></td>
-    <td align="center"><a href="https://zerolab.org/"><img src="https://avatars0.githubusercontent.com/u/31622?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Dan Braghis</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=zerolab" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/issues?q=author%3Azerolab" title="Bug reports">🐛</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=zerolab" title="Documentation">📖</a> <a href="#infra-zerolab" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="#maintenance-zerolab" title="Maintenance">🚧</a></td>
-    <td align="center"><a href="https://github.com/ruisaraiva19"><img src="https://avatars2.githubusercontent.com/u/7356098?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Rui Saraiva</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=ruisaraiva19" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/issues?q=author%3Aruisaraiva19" title="Bug reports">🐛</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=ruisaraiva19" title="Documentation">📖</a> <a href="#infra-ruisaraiva19" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="#maintenance-ruisaraiva19" title="Maintenance">🚧</a></td>
-    <td align="center"><a href="https://github.com/tbrlpld"><img src="https://avatars1.githubusercontent.com/u/24797493?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Tibor</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=tbrlpld" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/issues?q=author%3Atbrlpld" title="Bug reports">🐛</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=tbrlpld" title="Documentation">📖</a></td>
-    <td align="center"><a href="https://github.com/timmysmalls"><img src="https://avatars2.githubusercontent.com/u/48223453?v=4?s=100" width="100px;" alt=""/><br /><sub><b>timmysmalls</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=timmysmalls" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/issues?q=author%3Atimmysmalls" title="Bug reports">🐛</a></td>
-    <td align="center"><a href="https://wagtail.io/"><img src="https://avatars0.githubusercontent.com/u/15543?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Tom Dyson</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=tomdyson" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=tomdyson" title="Documentation">📖</a></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://fabien.cool/"><img src="https://avatars1.githubusercontent.com/u/1702255?v=4?s=100" width="100px;" alt=""/><br /><sub><b>fabienheureux</b></sub></a><br /><a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=fabienheureux" title="Code">💻</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/issues?q=author%3Afabienheureux" title="Bug reports">🐛</a> <a href="https://github.com/GrappleGQL/wagtail-grapple/commits?author=fabienheureux" title="Documentation">📖</a></td>
-  </tr>
-</table>
-
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
-
-<!-- ALL-CONTRIBUTORS-LIST:END -->
-
-This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!

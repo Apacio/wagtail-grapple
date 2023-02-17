@@ -15,9 +15,7 @@ class TestSettings(TestCase):
         """
         if len(DEPRECATED_SETTINGS) > 0:
             with self.assertLogs("grapple", level="WARNING"):
-                user_settings = {}
-                user_settings[DEPRECATED_SETTINGS[0]] = True
-                GrappleSettings(user_settings)
+                GrappleSettings({DEPRECATED_SETTINGS[0]: True})
 
     def test_error_raised_on_removed_setting(self):
         """
@@ -25,9 +23,7 @@ class TestSettings(TestCase):
         """
         if len(REMOVED_SETTINGS) > 0:
             with self.assertRaises(RuntimeError):
-                user_settings = {}
-                user_settings[REMOVED_SETTINGS[0]] = True
-                GrappleSettings(user_settings)
+                GrappleSettings({REMOVED_SETTINGS[0]: True})
 
     def test_compatibility_with_override_settings(self):
         """
@@ -35,9 +31,9 @@ class TestSettings(TestCase):
             from grapple.settings import grapple_settings
         setting_changed signal hook must ensure bound instance is refreshed.
         """
-        self.assertEquals(grapple_settings.PAGE_SIZE, 10)
+        self.assertEqual(grapple_settings.PAGE_SIZE, 10)
 
         with override_settings(GRAPPLE={"PAGE_SIZE": 5}):
-            self.assertEquals(grapple_settings.PAGE_SIZE, 5)
+            self.assertEqual(grapple_settings.PAGE_SIZE, 5)
 
-        self.assertEquals(grapple_settings.PAGE_SIZE, 10)
+        self.assertEqual(grapple_settings.PAGE_SIZE, 10)

@@ -1,14 +1,46 @@
-import base64
-import os
-
 from django.conf import settings
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from wagtail.search.backends import get_search_backend
+from wagtail.models import Site
 from wagtail.search.index import class_is_indexed
 from wagtail.search.models import Query
 
 from .settings import grapple_settings
 from .types.structures import BasePaginatedType, PaginationType
+
+
+def resolve_site(hostname):
+    """
+    Looks up a Site record from a hostname.
+
+    If two site records exist with the same hostname, you must specify a port
+    to disambiguate the by appending a colon followed by the port number to the
+    end of the hostname.
+
+    For example:
+
+    >>> resolve_site("wagtail.org")
+    >>> resolve_site("wagtail.org:443")
+
+    May raise one of the following exceptions:
+     - Site.DoesNotExist: If the site is not found
+     - Site.MultipleObjectsReturned: If multiple sites are found for a given hostname
+
+    :param hostname: The hostname of the site to look up
+    :type hostname: str
+    """
+    # Optionally allow querying by port
+    if ":" in hostname:
+        (hostname, port) = hostname.split(":", 1)
+        query = {
+            "hostname": hostname,
+            "port": port,
+        }
+    else:
+        query = {
+            "hostname": hostname,
+        }
+
+    return Site.objects.get(**query)
 
 
 def _sliced_queryset(qs, limit=None, offset=None):
@@ -63,6 +95,19 @@ def resolve_queryset(
     else:
         qs = qs.all()
 
+    order_by_relevance = True
+    if order is not None:
+        qs = qs.order_by(*(x.strip() for x in order.split(",")))
+        order_by_relevance = False
+
+    if collection is not None:
+        try:
+            qs.model._meta.get_field("collection")
+        except LookupError:
+            pass
+        else:
+            qs = qs.filter(collection=collection)
+
     if id is None and search_query:
         # Check if the queryset is searchable using Wagtail search.
         if not class_is_indexed(qs.model):
@@ -72,19 +117,7 @@ def resolve_queryset(
             query = Query.get(search_query)
             query.add_hit()
 
-        qs = get_search_backend().search(search_query, qs)
-
-        return _sliced_queryset(qs, limit, offset)
-
-    if order is not None:
-        qs = qs.order_by(*(x.strip() for x in order.split(",")))
-
-    if collection is not None:
-        try:
-            qs.model._meta.get_field("collection")
-            qs = qs.filter(collection=collection)
-        except Exception:
-            pass
+        qs = qs.search(search_query, order_by_relevance=order_by_relevance)
 
     return _sliced_queryset(qs, limit, offset)
 
@@ -153,6 +186,13 @@ def resolve_paginated_queryset(
     else:
         qs = qs.all()
 
+    # order_by_relevance will always take precedence over an existing order_by in the Postgres backend
+    # we need to set it to False if we want to specify our own order_by.
+    order_by_relevance = True
+    if order is not None:
+        qs = qs.order_by(*(x.strip() for x in order.split(",")))
+        order_by_relevance = False
+
     if id is None and search_query:
         # Check if the queryset is searchable using Wagtail search.
         if not class_is_indexed(qs.model):
@@ -162,12 +202,7 @@ def resolve_paginated_queryset(
             query = Query.get(search_query)
             query.add_hit()
 
-        results = get_search_backend().search(search_query, qs)
-
-        return get_paginated_result(results, page, per_page)
-
-    if order is not None:
-        qs = qs.order_by(*(x.strip() for x in order.split(",")))
+        qs = qs.search(search_query, order_by_relevance=order_by_relevance)
 
     return get_paginated_result(qs, page, per_page)
 
@@ -182,20 +217,3 @@ def get_media_item_url(cls):
     if url[0] == "/":
         return settings.BASE_URL + url
     return url
-
-
-def image_as_base64(image_file, format="png"):
-    """
-    :param `image_file` for the complete path of image.
-    :param `format` is format for image, eg: `png` or `jpg`.
-    """
-    encoded_string = ""
-    image_file = settings.BASE_DIR + image_file
-
-    if not os.path.isfile(image_file):
-        return "not an image"
-
-    with open(image_file, "rb") as img_f:
-        encoded_string = base64.b64encode(img_f.read())
-
-    return "data:image/%s;base64,%s" % (format, encoded_string)

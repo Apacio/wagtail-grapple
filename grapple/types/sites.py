@@ -2,15 +2,11 @@ import graphene
 from django.contrib.contenttypes.models import ContentType
 from django.utils.translation import gettext_lazy as _
 from graphene_django.types import DjangoObjectType
+from graphql.error import GraphQLError
+from wagtail.models import Page as WagtailPage
+from wagtail.models import Site
 
-try:
-    from wagtail.models import Page as WagtailPage
-    from wagtail.models import Site
-except ImportError:
-    from wagtail.core.models import Page as WagtailPage
-    from wagtail.core.models import Site
-
-from ..utils import resolve_queryset
+from ..utils import resolve_queryset, resolve_site
 from .pages import PageInterface, get_specific_page
 from .structures import QuerySetList
 
@@ -29,9 +25,10 @@ class SiteObjectType(DjangoObjectType):
         PageInterface,
         id=graphene.Int(),
         slug=graphene.String(),
+        url_path=graphene.String(),
         token=graphene.String(),
         content_type=graphene.String(),
-        url_path=graphene.String()
+        url_path=graphene.String(),
     )
 
     def resolve_pages(self, info, **kwargs):
@@ -55,6 +52,7 @@ class SiteObjectType(DjangoObjectType):
         return get_specific_page(
             id=kwargs.get("id"),
             slug=kwargs.get("slug"),
+            url_path=kwargs.get("url_path"),
             token=kwargs.get("token"),
             content_type=kwargs.get("content_type"),
             url_path=kwargs.get("url_path"),
@@ -82,12 +80,16 @@ def SitesQuery():
         def resolve_site(self, info, **kwargs):
             id, hostname = kwargs.get("id"), kwargs.get("hostname")
 
-            try:
-                if id:
-                    return Site.objects.get(pk=id)
-                elif hostname:
-                    return Site.objects.get(hostname=hostname)
-            except BaseException:
-                return None
+            if id:
+                return Site.objects.filter(pk=id).first()
+            elif hostname:
+                try:
+                    return resolve_site(hostname)
+                except Site.MultipleObjectsReturned:
+                    raise GraphQLError(
+                        "Your 'hostname' filter value of '{}' returned multiple sites. Try adding a port number (for example: '{}:80').".format(
+                            hostname, hostname
+                        )
+                    )
 
     return Mixin

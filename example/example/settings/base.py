@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     "wagtail.images",
     "wagtail.search",
     "wagtail.admin",
-    WAGTAIL_CORE,
+    "wagtail",
     "wagtail.contrib.settings",
     "modelcluster",
     "wagtailmedia",
@@ -163,7 +163,11 @@ WAGTAILDOCS_SERVE_METHOD = "serve_view"
 
 # Base URL to use when referring to full URLs within the Wagtail admin backend -
 # e.g. in notification emails. Don't include '/admin' or a trailing slash
+# BASE_URL is removed as of WAGTAIL 3.0, remove once WAGTAIL 2.0 is no longer supported
 BASE_URL = "http://localhost:8000"
+# as of Wagtail 3.0 BASE_URL was renamed to WAGTAILADMIN_BASE_URL, both are provided here for compatibility
+# when testing with Wagtail 2.0
+WAGTAILADMIN_BASE_URL = "http://localhost:8000"
 
 CORS_ORIGIN_ALLOW_ALL = True
 
@@ -172,14 +176,16 @@ GRAPHENE = {
     "SCHEMA": "grapple.schema.schema",
     "MIDDLEWARE": ["grapple.middleware.GrappleMiddleware"],
 }
+
+# GRAPPLE_EXPOSE_GRAPHIQL = True
+
 GRAPPLE = {
     "APPS": ["images", "home", "documents"],
     "ADD_SEARCH_HIT": True,
     "EXPOSE_GRAPHIQL": True,
 }
 
-HEADLESS_PREVIEW_CLIENT_URLS = {"default": "http://localhost:8001/preview"}
-HEADLESS_PREVIEW_LIVE = True
+WAGTAIL_HEADLESS_PREVIEW = {"CLIENT_URLS": {"default": "http://localhost:8001/preview"}}
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 

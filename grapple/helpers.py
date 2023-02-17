@@ -4,7 +4,7 @@ from types import MethodType
 import graphene
 from django.utils.translation import gettext_lazy as _
 from graphene.utils.str_converters import to_camel_case
-from wagtail.core.models import Page
+from wagtail.models import Page
 
 from .registry import registry
 from .settings import grapple_settings
@@ -37,17 +37,19 @@ def register_graphql_schema(schema_cls):
     return schema_cls
 
 
-def register_field_middleware(field_name: str, middleware):
-    assert isinstance(middleware, list), "middleware should be list but got {}.".format(
-        type(middleware)
-    )
+def register_field_middleware(field_name: str, middleware_list: list):
+    if not isinstance(middleware_list, list):
+        raise TypeError(
+            f"middleware_list should be a list, got {type(middleware_list)}"
+        )
+
     if grapple_settings.AUTO_CAMELCASE:
         field_name = to_camel_case(field_name)
 
     if field_name in field_middlewares:
-        field_middlewares[field_name] += middleware
+        field_middlewares[field_name] += middleware_list
     else:
-        field_middlewares[field_name] = middleware
+        field_middlewares[field_name] = middleware_list
 
 
 def register_query_field(
@@ -82,7 +84,8 @@ def register_query_field(
                     graphene.String, description=_("The preview token.")
                 )
                 field_query_params["language_code"] = graphene.Argument(
-                    graphene.String, description=ugettext_lazy("The current language code.")
+                    graphene.String,
+                    description=ugettext_lazy("The current language code."),
                 )
 
         def Mixin():
@@ -91,6 +94,10 @@ def register_query_field(
                 # If no filters then return nothing,
                 if not kwargs:
                     return None
+
+                for k, v in dict(kwargs).items():
+                    if v is None:
+                        del kwargs[k]
 
                 try:
                     # If is a Page then only query live/public pages.
@@ -112,7 +119,7 @@ def register_query_field(
                         return qs.get(**kwargs)
 
                     return cls.objects.get(**kwargs)
-                except Exception:
+                except (cls.DoesNotExist, cls.MultipleObjectsReturned):
                     return None
 
             def resolve_plural(self, _, info, **kwargs):
@@ -150,6 +157,7 @@ def register_query_field(
             setattr(
                 schema, "resolve_" + field_name, MethodType(resolve_singular, schema)
             )
+
             setattr(
                 schema,
                 "resolve_" + plural_field_name,
@@ -207,6 +215,10 @@ def register_paginated_query_field(
                 if not kwargs:
                     return None
 
+                for k, v in dict(kwargs).items():
+                    if v is None:
+                        del kwargs[k]
+
                 try:
                     # If is a Page then only query live/public pages.
                     if issubclass(cls, Page):
@@ -226,7 +238,7 @@ def register_paginated_query_field(
                         return qs.get(**kwargs)
 
                     return cls.objects.get(**kwargs)
-                except Exception:
+                except (cls.DoesNotExist, cls.MultipleObjectsReturned):
                     return None
 
             def resolve_plural(self, _, info, **kwargs):
@@ -304,25 +316,22 @@ def register_singular_query_field(
         def Mixin():
             # Generic methods to get all and query one model instance.
             def resolve_singular(self, _, info, **kwargs):
-                try:
-                    qs = cls.objects
-                    if "order" in kwargs:
-                        qs = qs.order_by(
-                            *(x.strip() for x in kwargs.pop("order").split(","))
-                        )
+                qs = cls.objects.all()
+                if "order" in kwargs:
+                    qs = qs.order_by(
+                        *(x.strip() for x in kwargs.pop("order").split(","))
+                    )
 
-                    # If is a Page then only query live/public pages.
-                    if issubclass(cls, Page):
-                        if "token" in kwargs and hasattr(
-                            cls, "get_page_from_preview_token"
-                        ):
-                            return cls.get_page_from_preview_token(kwargs.get("token"))
+                # If is a Page then only query live/public pages.
+                if issubclass(cls, Page):
+                    if "token" in kwargs and hasattr(
+                        cls, "get_page_from_preview_token"
+                    ):
+                        return cls.get_page_from_preview_token(kwargs.get("token"))
 
-                        return qs.live().public().filter(**kwargs).first()
+                    return qs.live().public().filter(**kwargs).first()
 
-                    return qs.filter(**kwargs).first()
-                except Exception:
-                    return None
+                return qs.filter(**kwargs).first()
 
             # Create schema and add resolve methods
             schema = type(cls.__name__ + "Query", (), {})
