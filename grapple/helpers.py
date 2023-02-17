@@ -85,7 +85,7 @@ def register_query_field(
                 )
                 field_query_params["language_code"] = graphene.Argument(
                     graphene.String,
-                    description=ugettext_lazy("The current language code."),
+                    description=_("The current language code."),
                 )
 
         def Mixin():
