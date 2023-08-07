@@ -22,6 +22,7 @@ class SiteObjectType(DjangoObjectType):
         ),
         enable_search=True,
         required=True,
+        languageCode=graphene.String(),
     )
     page = graphene.Field(
         PageInterface,
@@ -30,6 +31,7 @@ class SiteObjectType(DjangoObjectType):
         url_path=graphene.String(),
         token=graphene.String(),
         content_type=graphene.String(),
+        languageCode=graphene.String(),
     )
 
     def resolve_pages(self, info, **kwargs):
@@ -47,6 +49,11 @@ class SiteObjectType(DjangoObjectType):
             else:
                 pages = pages.filter(content_type=ctype)
 
+        language_code = kwargs.pop("language_code", None)
+
+        if language_code:
+            pages = pages.filter(locale__language_code=language_code)
+
         return resolve_queryset(pages, info, **kwargs)
 
     def resolve_page(self, info, **kwargs):
@@ -56,6 +63,7 @@ class SiteObjectType(DjangoObjectType):
             url_path=kwargs.get("url_path"),
             token=kwargs.get("token"),
             content_type=kwargs.get("content_type"),
+            language_code=kwargs.get("language_code"),
             site=self,
         )
 

@@ -426,7 +426,6 @@ def PagesQuery():
 
         # Return a specific page, identified by ID or Slug.
         def resolve_page(self, info, **kwargs):
-
             return get_specific_page(
                 id=kwargs.get("id"),
                 slug=kwargs.get("slug"),
