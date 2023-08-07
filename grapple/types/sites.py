@@ -22,7 +22,7 @@ class SiteObjectType(DjangoObjectType):
         ),
         enable_search=True,
         required=True,
-        languageCode=graphene.String(),
+        language_code=graphene.String(),
     )
     page = graphene.Field(
         PageInterface,
@@ -31,7 +31,7 @@ class SiteObjectType(DjangoObjectType):
         url_path=graphene.String(),
         token=graphene.String(),
         content_type=graphene.String(),
-        languageCode=graphene.String(),
+        language_code=graphene.String(),
     )
 
     def resolve_pages(self, info, **kwargs):
