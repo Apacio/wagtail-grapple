@@ -32,7 +32,7 @@ you want to give to GraphQL types (you can usually leave this blank):
         "APPS": ["home"],
     }
 
-Add the GraphQL urls to your ``urls.py``:
+Add the GraphQL URLs to your ``urls.py``:
 
 .. code-block:: python
 
@@ -58,26 +58,3 @@ By default, Grapple uses :doc:`these settings <../general-usage/settings>`.
 
 
 *Your GraphQL endpoint is available at http://localhost:8000/graphql/*
-
- .. _usage-with-subscriptions:
-Usage with subscriptions
-========================
-
-To enable GraphQL Subscriptions, you need to install Grapple with Django Channels.
-Run ``pip install wagtail_grapple[channels]`` and add ``channels`` to installed apps:
-
-.. code-block:: python
-
-    INSTALLED_APPS = [
-        # ...
-        "grapple",
-        "graphene_django",
-        "channels",
-        # ...
-    ]
-
-Add the following Django Channels configuration to your settings.
-
-.. code-block:: python
-
-    ASGI_APPLICATION = "graphql_ws.django.routing.application"

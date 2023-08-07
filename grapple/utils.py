@@ -1,5 +1,9 @@
+from typing import Literal, Optional
+
 from django.conf import settings
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
+from django.db import connection
+from graphql import GraphQLError
 from wagtail.models import Site
 from wagtail.search.index import class_is_indexed
 from wagtail.search.models import Query
@@ -8,26 +12,38 @@ from .settings import grapple_settings
 from .types.structures import BasePaginatedType, PaginationType
 
 
-def resolve_site(hostname):
+def resolve_site_by_id(
+    *,
+    id: int,
+) -> Optional[Site]:
     """
-    Looks up a Site record from a hostname.
+    Find a `Site` object by ID
+    """
 
-    If two site records exist with the same hostname, you must specify a port
-    to disambiguate the by appending a colon followed by the port number to the
-    end of the hostname.
+    try:
+        return Site.objects.get(id=id)
+    except Site.DoesNotExist:
+        # This is an expected error, so should not raise a GraphQLError.
+        return None
+
+
+def resolve_site_by_hostname(
+    *,
+    hostname: str,
+    filter_name: Literal["site", "hostname"],
+) -> Optional[Site]:
+    """
+    Find a `Site` object by hostname.
+
+    If two `Site` records exist with the same hostname, you must include the
+    port to disambiguate.
 
     For example:
 
-    >>> resolve_site("wagtail.org")
-    >>> resolve_site("wagtail.org:443")
-
-    May raise one of the following exceptions:
-     - Site.DoesNotExist: If the site is not found
-     - Site.MultipleObjectsReturned: If multiple sites are found for a given hostname
-
-    :param hostname: The hostname of the site to look up
-    :type hostname: str
+    >>> resolve_site_by_hostname(hostname="wagtail.org")
+    >>> resolve_site_by_hostname(hostname="wagtail.org:443")
     """
+
     # Optionally allow querying by port
     if ":" in hostname:
         (hostname, port) = hostname.split(":", 1)
@@ -40,22 +56,26 @@ def resolve_site(hostname):
             "hostname": hostname,
         }
 
-    return Site.objects.get(**query)
+    try:
+        return Site.objects.get(**query)
+    except Site.MultipleObjectsReturned as err:
+        raise GraphQLError(
+            f"Your filter `{filter_name}={hostname}` returned "
+            "multiple sites. Try including a port number to disambiguate "
+            f"(e.g. `{filter_name}={hostname}:8000`)."
+        ) from err
+    except Site.DoesNotExist:
+        # This is an expected error, so should not raise a GraphQLError.
+        return None
 
 
 def _sliced_queryset(qs, limit=None, offset=None):
     offset = int(offset or 0)
-
-    if limit is not None:
-        limit = min(
-            int(limit or grapple_settings.PAGE_SIZE), grapple_settings.MAX_PAGE_SIZE
-        )
-        return qs[offset : limit + offset]
-
-    if offset:
-        return qs[offset:]
-
-    return qs
+    # default
+    limit = int(limit or grapple_settings.PAGE_SIZE)
+    # maximum
+    limit = min(limit, grapple_settings.MAX_PAGE_SIZE)
+    return qs[offset : limit + offset]
 
 
 def resolve_queryset(
@@ -118,6 +138,8 @@ def resolve_queryset(
             query.add_hit()
 
         qs = qs.search(search_query, order_by_relevance=order_by_relevance)
+        if connection.vendor != "sqlite":
+            qs = qs.annotate_score("search_score")
 
     return _sliced_queryset(qs, limit, offset)
 
@@ -203,6 +225,8 @@ def resolve_paginated_queryset(
             query.add_hit()
 
         qs = qs.search(search_query, order_by_relevance=order_by_relevance)
+        if connection.vendor != "sqlite":
+            qs = qs.annotate_score("search_score")
 
     return get_paginated_result(qs, page, per_page)
 
