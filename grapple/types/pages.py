@@ -10,6 +10,7 @@ from wagtail.models import Site
 from ..registry import registry
 from ..utils import resolve_queryset, resolve_site_by_hostname
 from .structures import QuerySetList
+from .locales import LocaleType
 
 
 class PageInterface(graphene.Interface):
@@ -32,6 +33,8 @@ class PageInterface(graphene.Interface):
 
     first_published_at = graphene.DateTime()
     last_published_at = graphene.DateTime()
+
+    locale = LocaleType()
 
     parent = graphene.Field(lambda: PageInterface)
     children = QuerySetList(
