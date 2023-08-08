@@ -79,6 +79,9 @@ class PageInterface(graphene.Interface):
     def resolve_page_type(self, info, **kwargs):
         return PageInterface.resolve_type(self.specific, info, **kwargs)
 
+    def resolve_locale(self, info):
+        return self.locale
+
     def resolve_parent(self, info, **kwargs):
         """
         Resolves the parent node of current page node.
