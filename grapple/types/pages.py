@@ -52,6 +52,10 @@ class PageInterface(graphene.Interface):
     ancestors = QuerySetList(
         graphene.NonNull(lambda: PageInterface), enable_search=True, required=True
     )
+    translations = QuerySetList(
+        graphene.NonNull(lambda: PageInterface), enable_search=True, required=True
+    )
+    translation = graphene.Field(lambda: PageInterface)
 
     search_score = graphene.Float()
 
@@ -141,6 +145,22 @@ class PageInterface(graphene.Interface):
         return resolve_queryset(
             self.get_ancestors().live().public().specific(), info, **kwargs
         )
+
+    def resolve_translations(self, info, **kwargs):
+        """
+        Resolves a list of nodes pointing to the current page’s translations.
+        Docs: https://docs.wagtail.org/en/stable/reference/pages/model_reference.html#wagtail.models.Page.get_translations
+        """
+        return resolve_queryset(
+            self.get_translations().live().public().specific(), info, **kwargs
+        )
+
+    def resolve_translation(self, info, locale, **kwargs):
+        """
+        Resolves the translated node of current page node, will be None if no translation exists.
+        Docs: https://docs.wagtail.org/en/stable/reference/pages/model_reference.html#wagtail.models.Page.get_translation_or_none
+        """
+        return self.get_translation_or_none(locale).live().public().specific()
 
     def resolve_seo_title(self, info, **kwargs):
         """
