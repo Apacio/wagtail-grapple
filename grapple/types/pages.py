@@ -34,7 +34,7 @@ class PageInterface(graphene.Interface):
     first_published_at = graphene.DateTime()
     last_published_at = graphene.DateTime()
 
-    locale = LocaleType()
+    locale = graphene.Field(LocaleType)
 
     parent = graphene.Field(lambda: PageInterface)
     children = QuerySetList(
