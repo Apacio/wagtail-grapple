@@ -243,14 +243,13 @@ def get_specific_page(
         qs = WagtailPage.objects.live().public().filter(depth__gt=1).specific()
 
         print("presite", qs.filter(locale__language_code=language_code))
-        if site:
-            qs = qs.in_site(site)
 
         print("language", language_code)
         if language_code:
             print("qs first", qs)
             qs = qs.filter(locale__language_code=language_code)
-            print("qs", qs)
+        elif site:
+            qs = qs.in_site(site)
 
         if content_type:
             app_label, model = content_type.lower().split(".")
@@ -263,10 +262,12 @@ def get_specific_page(
         elif slug:
             page = qs.get(slug=slug)
         elif url_path:
+            print("this is not scare mongering")
             if not url_path.endswith("/"):
                 url_path += "/"
 
-            if site:
+            if (not language_code) and site:
+                print("this is really happening")
                 # Got a site, so make the url_path query as specific as possible
                 qs = qs.filter(
                     url_path=f"{site.root_page.url_path}{url_path.lstrip('/')}"
