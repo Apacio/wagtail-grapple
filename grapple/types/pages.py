@@ -242,11 +242,15 @@ def get_specific_page(
         # Everything but the special RootPage
         qs = WagtailPage.objects.live().public().filter(depth__gt=1).specific()
 
+        print("presite", qs.filter(locale__language_code=language_code))
         if site:
             qs = qs.in_site(site)
 
+        print("language", language_code)
         if language_code:
+            print("qs first", qs)
             qs = qs.filter(locale__language_code=language_code)
+            print("qs", qs)
 
         if content_type:
             app_label, model = content_type.lower().split(".")

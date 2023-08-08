@@ -50,7 +50,6 @@ class SiteObjectType(DjangoObjectType):
                 pages = pages.filter(content_type=ctype)
 
         language_code = kwargs.pop("language_code", None)
-
         if language_code:
             pages = pages.filter(locale__language_code=language_code)
 
