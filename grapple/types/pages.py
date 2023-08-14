@@ -291,10 +291,9 @@ def get_specific_page(
 
             if site:
                 if language_code:
-                    # page doesn't have a site
-                    # so can't filter by site
-                    # but other pages can existing with same language code and same url_path
-                    # so it needs to share a translation_key with a page on the site
+                    # Page doesn't have a site, so can't filter by site
+                    # but other pages can exist on different sites with same language code and same url_path
+                    # so it needs to share a translation_key with a page on the passed site
                     site_translation_keys = root_qs.in_site(site).values_list(
                         "translation_key", flat=True
                     )
