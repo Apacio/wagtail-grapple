@@ -266,7 +266,9 @@ def get_specific_page(
             return get_preview_page(token)
 
         # Everything but the special RootPage
-        qs = WagtailPage.objects.live().public().filter(depth__gt=1).specific()
+        root_qs = qs = (
+            WagtailPage.objects.live().public().filter(depth__gt=1).specific()
+        )
 
         if language_code:
             qs = qs.filter(locale__language_code=language_code)
@@ -288,10 +290,24 @@ def get_specific_page(
                 url_path += "/"
 
             if site:
-                # Got a site, so make the url_path query as specific as possible
-                qs = qs.filter(
-                    url_path=f"{site.root_page.url_path}{url_path.lstrip('/')}"
-                )
+                if language_code:
+                    # page doesn't have a site
+                    # so can't filter by site
+                    # but other pages can existing with same language code and same url_path
+                    # so it needs to share a translation_key with a page on the site
+                    site_translation_keys = root_qs.in_site(site).values_list(
+                        "translation_key", flat=True
+                    )
+                    qs = qs.filter(
+                        url_path__endswith=url_path,
+                        translation_key__in=site_translation_keys,
+                    )
+                else:
+                    # Got a site, so make the url_path query as specific as possible
+                    qs = qs.filter(
+                        url_path=f"{site.root_page.url_path}{url_path.lstrip('/')}"
+                    )
+
             else:
                 # if the url_path is not specific enough, or the same url_path exists under multiple
                 # site roots, only the first one will be returned.
