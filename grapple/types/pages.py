@@ -287,7 +287,7 @@ def get_specific_page(
             if not url_path.endswith("/"):
                 url_path += "/"
 
-            if (not language_code) and site:
+            if site:
                 # Got a site, so make the url_path query as specific as possible
                 qs = qs.filter(
                     url_path=f"{site.root_page.url_path}{url_path.lstrip('/')}"
