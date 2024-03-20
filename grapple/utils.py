@@ -6,7 +6,7 @@ from django.db import connection
 from graphql import GraphQLError
 from wagtail.models import Site
 from wagtail.search.index import class_is_indexed
-from wagtail.search.models import Query
+from wagtail.contrib.search_promotions import Query
 
 from .settings import grapple_settings
 from .types.structures import BasePaginatedType, PaginationType
@@ -168,9 +168,9 @@ def get_paginated_result(qs, page, per_page):
             count=len(page_obj.object_list),
             per_page=per_page,
             current_page=page_obj.number,
-            prev_page=page_obj.previous_page_number()
-            if page_obj.has_previous()
-            else None,
+            prev_page=(
+                page_obj.previous_page_number() if page_obj.has_previous() else None
+            ),
             next_page=page_obj.next_page_number() if page_obj.has_next() else None,
             total_pages=paginator.num_pages,
         ),

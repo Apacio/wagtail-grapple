@@ -133,7 +133,7 @@ class BlogPage(HeadlessPreviewMixin, Page):
     )
     summary = RichTextField(blank=True)
     extra_summary = RichTextField(blank=True)
-    body = StreamField(StreamFieldBlock(), use_json_field=True)
+    body = StreamField(StreamFieldBlock())
     tags = ClusterTaggableManager(through=BlogPageTag, blank=True)
 
     content_panels = Page.content_panels + [
